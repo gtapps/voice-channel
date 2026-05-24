@@ -60,6 +60,18 @@ def run_server(config_path: str, no_adapter: bool) -> None:
     pipeline = AudioPipeline(dispatcher, cfg)
 
     async def _main() -> None:
+        # Pre-register hermits from config so route_transcript works in --no-adapter mode
+        # (normally the WS adapter does this on hello handshake)
+        from .core.session import HermitConfig
+        for hermit_id, hermit_cfg in cfg.get("hermits", {}).items():
+            dispatcher.registry.register(HermitConfig(
+                hermit_id=hermit_id,
+                token=hermit_cfg.get("websocket_token", ""),
+                triggers=hermit_cfg.get("triggers", []),
+                language=hermit_cfg.get("language"),
+                voice=hermit_cfg.get("voice", ""),
+            ))
+
         pipeline.start()
 
         if no_adapter:

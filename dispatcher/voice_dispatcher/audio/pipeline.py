@@ -15,6 +15,8 @@ import logging
 import math
 import os
 import queue
+import re
+import sys
 import threading
 import time
 import uuid
@@ -30,10 +32,15 @@ logger = logging.getLogger(__name__)
 
 # ── Config ────────────────────────────────────────────────────────────────────
 
-SAMPLE_RATE = 16_000          # Hz (Whisper expects 16 kHz)
+SAMPLE_RATE = 16_000          # Hz fed to Whisper / Silero VAD
 CHUNK_SAMPLES = 512           # Silero VAD chunk size (512 @ 16 kHz = 32 ms)
 SILENCE_CHUNKS_END = 25       # ~800 ms of silence ends utterance
 MAX_UTTERANCE_CHUNKS = 1_875  # ~60 s safety limit
+
+# On Linux the raw ALSA device often only supports 44100/48000 Hz.
+# "sysdefault" (or "default" on many setups) routes through PipeWire/dmix
+# and supports any rate including 16 kHz.  Set via config audio.input_device.
+LINUX_DEFAULT_DEVICE = "sysdefault"
 
 
 # ── Trigger matching ──────────────────────────────────────────────────────────
@@ -64,7 +71,6 @@ def match_trigger(
     Strips punctuation, lowercases, then checks startswith with up to
     `max_edit_distance` edit tolerance on the trigger portion.
     """
-    import re
     clean = re.sub(r"[^\w\s]", "", transcript.lower()).strip()
     for trigger in triggers:
         t = re.sub(r"[^\w\s]", "", trigger.lower()).strip()
@@ -109,9 +115,11 @@ class AudioPipeline:
         self._dispatcher = dispatcher
         self._cfg = config
 
-        # Audio device indices (None = system default)
+        # Audio device indices/names (None = system default; resolved in start())
         self._input_device: Optional[int] = config.get("audio", {}).get("input_device")
         self._output_device: Optional[int] = config.get("audio", {}).get("output_device")
+        self._resolved_input: object = self._input_device
+        self._resolved_output: object = self._output_device
 
         self._vad_threshold: float = float(
             config.get("audio", {}).get("vad_threshold", 0.5)
@@ -144,6 +152,7 @@ class AudioPipeline:
 
     def start(self) -> None:
         """Load models, subscribe to bus, start threads."""
+        self._resolve_devices()
         self._load_vad()
         self._load_whisper()
 
@@ -169,6 +178,37 @@ class AudioPipeline:
         for t in self._threads:
             t.join(timeout=5)
         logger.info("audio pipeline stopped")
+
+    # ── Device resolution ─────────────────────────────────────────────────────
+
+    def _resolve_devices(self) -> None:
+        """
+        On Linux, fall back to 'sysdefault' when no device is configured.
+        sysdefault routes through PipeWire/dmix and supports arbitrary sample
+        rates (including 16 kHz) via software resampling — unlike raw hw:x,y.
+        """
+        try:
+            import sounddevice as sd
+        except ImportError:
+            return
+
+        if sys.platform.startswith('linux'):
+            if self._input_device is None:
+                try:
+                    sd.check_input_settings(device=LINUX_DEFAULT_DEVICE,
+                                            samplerate=SAMPLE_RATE, channels=1)
+                    self._resolved_input = LINUX_DEFAULT_DEVICE
+                    logger.debug("input device resolved to %r", self._resolved_input)
+                except Exception:
+                    pass
+            if self._output_device is None:
+                try:
+                    sd.check_output_settings(device=LINUX_DEFAULT_DEVICE,
+                                             samplerate=SAMPLE_RATE, channels=1)
+                    self._resolved_output = LINUX_DEFAULT_DEVICE
+                    logger.debug("output device resolved to %r", self._resolved_output)
+                except Exception:
+                    pass
 
     # ── Model loading ─────────────────────────────────────────────────────────
 
@@ -220,7 +260,8 @@ class AudioPipeline:
             logger.error("sounddevice/numpy not installed — audio capture disabled")
             return
 
-        logger.info("audio worker starting (input device: %s)", self._input_device)
+        device = self._resolved_input
+        logger.info("audio worker starting (input device: %s)", device)
 
         audio_q: queue.Queue = queue.Queue()
 
@@ -235,7 +276,7 @@ class AudioPipeline:
             channels=1,
             dtype="float32",
             blocksize=CHUNK_SAMPLES,
-            device=self._input_device,
+            device=device,
             callback=_callback,
         )
 
@@ -343,7 +384,7 @@ class AudioPipeline:
 
         logger.debug("no trigger matched for: %r", transcript)
         if self._no_match_tick:
-            threading.Thread(target=_play_tick, args=(self._output_device,), daemon=True).start()
+            threading.Thread(target=_play_tick, args=(self._resolved_output,), daemon=True).start()
 
     # ── TTS playback ──────────────────────────────────────────────────────────
 
@@ -369,7 +410,6 @@ class AudioPipeline:
             return
 
         try:
-            import io as _io
             import sounddevice as sd  # type: ignore
             import numpy as np
             import wave
@@ -377,7 +417,7 @@ class AudioPipeline:
             self._speaking.set()
             logger.info("tts: hermit=%r uid=%r text=%r", hermit_id, uid, text)
 
-            buf = _io.BytesIO()
+            buf = io.BytesIO()
             with wave.open(buf, "wb") as wf:
                 voice.synthesize(text, wf)
 
@@ -387,7 +427,7 @@ class AudioPipeline:
                 frames = wf.readframes(wf.getnframes())
                 audio = np.frombuffer(frames, dtype=np.int16).astype(np.float32) / 32768.0
 
-            sd.play(audio, rate, device=self._output_device, blocking=True)
+            sd.play(audio, rate, device=self._resolved_output, blocking=True)
             sd.wait()
 
         except Exception as exc:
