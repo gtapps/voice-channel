@@ -1,3 +1,8 @@
+---
+name: voice:status
+description: Report the current state of the voice channel connection, last utterance, and any errors.
+---
+
 # /voice:status
 
 Report the current state of the voice channel connection.

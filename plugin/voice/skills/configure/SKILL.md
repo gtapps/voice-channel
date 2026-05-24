@@ -1,3 +1,8 @@
+---
+name: voice:configure
+description: Configure the voice channel connection — dispatcher URL, token, hermit ID, and optional permission-relay opt-in.
+---
+
 # /voice:configure
 
 Configure the voice channel connection inside this hermit container.
