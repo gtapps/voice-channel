@@ -1,0 +1,20 @@
+{
+  "name": "claude-channel-voice",
+  "version": "0.1.0",
+  "license": "Apache-2.0",
+  "type": "module",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.0",
+    "tsx": "^4.19.0",
+    "ws": "^8.18.0",
+    "zod": "^3.25.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@types/ws": "^8.5.14",
+    "vitest": "^3.0.0"
+  },
+  "scripts": {
+    "test": "vitest run tests/protocol.test.ts"
+  }
+}

@@ -1,0 +1,77 @@
+# voice-dispatcher config  — copy to ~/.config/voice-dispatcher/config.yaml
+# and edit before first run.
+
+# ── Audio ──────────────────────────────────────────────────────────────────────
+
+audio:
+  # Input device: use the built-in mic, NOT AirPods.
+  # AirPods force Bluetooth SCO codec (mono 8-16 kHz) when the mic is active,
+  # which degrades Whisper accuracy significantly.
+  # Leave null to use the system default.  Use `voice-dispatcher list-devices`
+  # to find the index of your preferred mic.
+  input_device: null    # e.g.  2  (integer index)
+  output_device: null   # null = system default (AirPods for output is fine)
+
+  sample_rate: 16000    # Hz — must match Whisper's expected rate
+  channels: 1
+
+  # Silero VAD threshold — higher = less sensitive (fewer false positives)
+  vad_threshold: 0.5
+  # Silence duration (seconds) that ends an utterance
+  silence_duration: 0.8
+
+  # Play a short 40ms 600Hz click when VAD fires but no trigger matches.
+  # Off by default.  Useful for debugging "is it even listening?" during setup.
+  no_match_tick: false
+
+# ── Whisper ────────────────────────────────────────────────────────────────────
+
+whisper:
+  model: "tiny"         # tiny | base | small
+  device: "cpu"         # cpu | cuda
+  compute_type: "int8"  # int8 | float16 | float32
+
+# ── Hermits ────────────────────────────────────────────────────────────────────
+#
+# Each hermit maps a set of trigger phrases to a WebSocket token and a Piper
+# voice file.  Run  voice-dispatcher config add-hermit <id>  to register one.
+#
+# Adding a hermit is a 3-step recipe (not just one YAML edit):
+#   1.  voice-dispatcher config add-hermit <id> --triggers "..." --voice <voice>
+#   2.  /plugin install voice-channel  inside that hermit's container
+#   3.  /voice:configure  with the matching dispatcher URL and token
+
+hermits:
+  jarvis:
+    # Trigger phrases — fuzzy-matched (1-2 char edit distance), case-insensitive
+    triggers:
+      - "hey jarvis"
+      - "hermit"
+      - "ó hermit"
+    language: en            # hint passed to Whisper; null = auto-detect
+    voice: en_US-lessac-medium.onnx
+    websocket_token: "REPLACE_WITH_TOKEN"
+
+  # Additional hermits — uncomment and fill in:
+  # casa:
+  #   triggers:
+  #     - "hey casa"
+  #     - "casa"
+  #     - "ó casa"
+  #   language: pt
+  #   voice: pt_PT-tugao-medium.onnx
+  #   websocket_token: "REPLACE_WITH_TOKEN"
+
+# ── Server ────────────────────────────────────────────────────────────────────
+
+server:
+  host: "0.0.0.0"     # LAN-reachable.  Change to a specific interface on multi-NIC laptops.
+  port: 7355
+
+# ── Piper voices ──────────────────────────────────────────────────────────────
+#
+# Place .onnx voice files (and matching .onnx.json files) under this directory.
+# Download from: https://github.com/rhasspy/piper/releases
+
+piper:
+  voices_dir: "~/.local/share/voice-dispatcher/voices"

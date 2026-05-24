@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-16"?>
+<!--
+  Windows Task Scheduler XML for voice-dispatcher.
+  Run install-windows.ps1 to register this task — do not import manually.
+  The script substitutes VENV_PYTHON_PLACEHOLDER with the actual venv path.
+-->
+<Task version="1.4" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
+  <RegistrationInfo>
+    <Description>voice-dispatcher — ambient voice control for claude-code-hermit</Description>
+    <URI>\voice-dispatcher</URI>
+  </RegistrationInfo>
+  <Triggers>
+    <LogonTrigger>
+      <Enabled>true</Enabled>
+    </LogonTrigger>
+  </Triggers>
+  <Principals>
+    <Principal id="Author">
+      <LogonType>InteractiveToken</LogonType>
+      <RunLevel>LeastPrivilege</RunLevel>
+    </Principal>
+  </Principals>
+  <Settings>
+    <MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy>
+    <DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries>
+    <StopIfGoingOnBatteries>false</StopIfGoingOnBatteries>
+    <ExecutionTimeLimit>PT0S</ExecutionTimeLimit>
+    <RestartOnFailure>
+      <Interval>PT30S</Interval>
+      <Count>999</Count>
+    </RestartOnFailure>
+  </Settings>
+  <Actions Context="Author">
+    <Exec>
+      <Command>VENV_PYTHON_PLACEHOLDER</Command>
+      <Arguments>-m voice_dispatcher run</Arguments>
+    </Exec>
+  </Actions>
+</Task>

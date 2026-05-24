@@ -1,0 +1,44 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "voice-dispatcher"
+version = "0.1.0"
+description = "Voice dispatcher — ambient voice control for claude-code-hermit"
+license = { text = "Apache-2.0" }
+requires-python = ">=3.11"
+dependencies = [
+    # Audio pipeline
+    "faster-whisper>=1.0.0",
+    "piper-tts>=1.2.0",
+    "sounddevice>=0.4.6",
+    "silero-vad>=5.0",
+    "numpy>=1.24",
+    # WebSocket adapter
+    "websockets>=12.0",
+    # Config / CLI
+    "pyyaml>=6.0",
+    "click>=8.1",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.23",
+]
+
+[project.scripts]
+voice-dispatcher = "voice_dispatcher.__main__:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["voice_dispatcher*"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+filterwarnings = [
+    # Cosmetic noise from killing daemon asyncio loops in integration tests
+    "ignore:Exception ignored while closing generator:pytest.PytestUnraisableExceptionWarning",
+    "ignore:coroutine .* was never awaited:RuntimeWarning",
+]

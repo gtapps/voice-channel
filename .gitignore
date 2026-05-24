@@ -1,0 +1,13 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+.pytest_cache/
+
+# Node
+node_modules/
+*.js.map
+
+# Data dirs created at runtime
+/dispatcher/.venv/
