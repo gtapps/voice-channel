@@ -8,8 +8,8 @@ Type=simple
 ExecStart=VENV_PYTHON_PLACEHOLDER -m voice_dispatcher run
 Restart=on-failure
 RestartSec=5
-# Mic access — user session service; no special audio group needed with PipeWire/PulseAudio
-Environment=DISPLAY=:0
+# User session service — PipeWire/PulseAudio socket and XDG_RUNTIME_DIR are
+# inherited from PAM on login.  No audio group or DISPLAY needed.
 
 [Install]
 WantedBy=default.target

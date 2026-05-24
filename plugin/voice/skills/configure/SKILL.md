@@ -11,7 +11,8 @@ Ask the user for the following values, then write them to `${CLAUDE_PLUGIN_DATA}
    laptop's LAN IP: `ws://192.168.x.y:7355`.
 
 2. **token** — Bearer token printed by the dispatcher when they ran:
-   `voice-dispatcher config add-hermit <id> --token <token>`
+   `voice-dispatcher config add-hermit <id> --triggers "..." --voice <voice.onnx>`
+   (The token is auto-generated and printed — copy it from that output.)
    This token is the only authentication gate — treat it like a password.
 
 3. **hermit_id** — The identifier this hermit uses when connecting (must match what was passed to

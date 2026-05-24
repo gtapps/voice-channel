@@ -11,3 +11,6 @@ node_modules/
 
 # Data dirs created at runtime
 /dispatcher/.venv/
+
+# Dev launchers and local MCP config (not part of the plugin distribution)
+.mcp.json
