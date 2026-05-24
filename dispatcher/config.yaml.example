@@ -46,8 +46,8 @@ agents:
     # Trigger phrases — fuzzy-matched (1-2 char edit distance), case-insensitive
     triggers:
       - "hey jarvis"
-      - "agent"
-      - "ó agent"
+      - "jarvis"
+      - "ó jarvis"
     language: en            # hint passed to Whisper; null = auto-detect
     voice: en_US-lessac-medium.onnx
     websocket_token: "REPLACE_WITH_TOKEN"

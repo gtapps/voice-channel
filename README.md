@@ -65,7 +65,7 @@ Browse other voices: https://github.com/rhasspy/piper/blob/master/VOICES.md
 
 ```bash
 voice-dispatcher config add-agent jarvis \
-  --triggers "hey jarvis,agent,ó agent" \
+  --triggers "hey jarvis,jarvis,ó jarvis" \
   --voice en_US-lessac-medium.onnx
 ```
 
@@ -95,7 +95,9 @@ claude plugin install voice@voice-channel --scope local
 
 ### 6. Configure the plugin
 
-Find the Docker bridge gateway IP (how the container reaches the host):
+First find the Docker bridge gateway IP — how the container reaches the dispatcher
+on the host (only needed when both run on the same machine; skip if the dispatcher
+is on a separate LAN host):
 
 ```bash
 # Inside the container:
@@ -110,10 +112,16 @@ with open('/proc/net/route') as f:
 "
 ```
 
-Then write the config (replace values as needed):
+**Recommended:** run `/voice:configure` inside a Claude Code session and answer the
+prompts (dispatcher URL `ws://<bridge-ip>:7355`, token from step 3, agent ID `jarvis`).
+It writes `config.json` to the correct location automatically — no need to know the
+data-dir path.
+
+<details>
+<summary>Manual alternative (no session needed)</summary>
 
 ```bash
-# Inside the container — adjust DATA_DIR to match your plugin scope:
+# Inside the container. The data dir is derived as {plugin}-{marketplace}:
 DATA_DIR="$HOME/.claude/plugins/data/voice-voice-channel"
 mkdir -p "$DATA_DIR"
 cat > "$DATA_DIR/config.json" <<EOF
@@ -126,11 +134,11 @@ cat > "$DATA_DIR/config.json" <<EOF
 EOF
 ```
 
-Or run `/voice:configure` inside a Claude Code session — it will prompt for each value.
-
-> **Note on `CLAUDE_PLUGIN_DATA`:** Claude Code sets this to
-> `~/.claude/plugins/data/voice-voice-channel/` (without a trailing plugin-name subdir).
-> `config.json` and `status.json` must live directly in that directory.
+`config.json` and `status.json` must live **directly** in `$DATA_DIR` (that's what
+`CLAUDE_PLUGIN_DATA` resolves to — no trailing plugin-name subdir). If a future
+version changes the path derivation and `/voice:status` reports a nested `voice/`
+subdir, re-run `/voice:configure` instead — it always targets the right place.
+</details>
 
 ### 7. Start a Claude Code session with the voice channel
 

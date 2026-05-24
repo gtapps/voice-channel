@@ -54,5 +54,5 @@ plugin inside this container — it does NOT modify the dispatcher's YAML on the
 
 - This skill writes only to `${CLAUDE_PLUGIN_DATA}/config.json` inside this container.
 - To add this agent to the dispatcher, the user must run on their laptop:
-  `voice-dispatcher config add-agent <agent_id> --triggers "hey jarvis,agent"`
+  `voice-dispatcher config add-agent <agent_id> --triggers "hey jarvis,jarvis,ó jarvis"`
 - The dispatcher URL accepts both mDNS hostnames and bare IP addresses.

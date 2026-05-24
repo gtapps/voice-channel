@@ -49,7 +49,7 @@ Key settings:
 
 ```bash
 voice-dispatcher config add-agent jarvis \
-  --triggers "hey jarvis,agent,ó agent" \
+  --triggers "hey jarvis,jarvis,ó jarvis" \
   --voice en_US-lessac-medium.onnx
 ```
 
