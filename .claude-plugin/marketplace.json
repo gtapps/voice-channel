@@ -1,3 +1,25 @@
 {
-  "plugins": ["plugin/voice"]
+  "name": "voice-channel",
+  "owner": {
+    "name": "gtapps"
+  },
+  "metadata": {
+    "description": "Ambient voice control for claude-code-hermit — speak to your hermits from anywhere in the room."
+  },
+  "plugins": [
+    {
+      "name": "voice",
+      "source": "./plugin/voice",
+      "description": "Voice channel for Claude Code — ambient voice control via a LAN dispatcher with local Whisper STT and Piper TTS.",
+      "version": "0.1.0",
+      "category": "productivity",
+      "author": {
+        "name": "gtapps"
+      },
+      "license": "Apache-2.0",
+      "homepage": "https://github.com/gtapps/voice-channel",
+      "repository": "https://github.com/gtapps/voice-channel",
+      "keywords": ["voice", "channel", "whisper", "tts", "mcp", "lan"]
+    }
+  ]
 }
