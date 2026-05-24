@@ -1,5 +1,8 @@
 # voice-channel
 
+![Downloads](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/<OWNER>/<REPO>/_gh_traffic_stats/.github/badges/downloads.json)
+![Views](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/<OWNER>/<REPO>/_gh_traffic_stats/.github/badges/views.json)
+
 Ambient voice control for **any Claude Code instance**. Speak to your agents from
 anywhere in the room. Originally built for
 [claude-code-hermit](https://github.com/gtapps/claude-code-hermit) — long-running
@@ -138,6 +141,7 @@ EOF
 `CLAUDE_PLUGIN_DATA` resolves to — no trailing plugin-name subdir). If a future
 version changes the path derivation and `/voice:status` reports a nested `voice/`
 subdir, re-run `/voice:configure` instead — it always targets the right place.
+
 </details>
 
 ### 7. Start a Claude Code session with the voice channel
@@ -162,24 +166,24 @@ Say "hey jarvis, what time is it?" — Claude should reply aloud.
 
 ## Dispatcher URL — same host vs separate LAN host
 
-| Setup | URL to use |
-|---|---|
+| Setup                                                          | URL to use                                                                                                |
+| -------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
 | Dispatcher and agent on the **same machine** (agent in Docker) | `ws://<bridge-gateway>:7355` — find with the Python snippet above; typically `172.17.0.1` or `172.18.0.1` |
-| Dispatcher on a **separate LAN laptop** (typical setup) | `ws://laptop.local:7355` (mDNS) or `ws://192.168.x.y:7355` (static IP) |
+| Dispatcher on a **separate LAN laptop** (typical setup)        | `ws://laptop.local:7355` (mDNS) or `ws://192.168.x.y:7355` (static IP)                                    |
 
 The dispatcher binds `0.0.0.0:7355` by default so both cases work without config changes.
 
 ## Troubleshooting
 
-| Symptom | Check |
-|---|---|
-| `-32000` on plugin start | Dispatcher not running, or `config.json` missing/in wrong path. Run `/voice:status` to check. Config must be at `~/.claude/plugins/data/voice-voice-channel/config.json` (not in a `voice/` subdir). |
-| Plugin shows "disconnected" (close code 1006) | Nothing listening at the dispatcher URL. Check dispatcher is running (`lsof -i :7355` on host) and bound to `0.0.0.0`, not `127.0.0.1`. |
-| No response to voice | Dispatcher running but mic not triggering. macOS: check mic permission (System Settings → Privacy → Microphone). Linux: check `systemctl --user status voice-dispatcher` and mic levels. |
-| mDNS not resolving | Use the laptop's LAN IP instead: `ws://192.168.x.y:7355`. Some mesh-router firmware suppresses mDNS. |
-| AirPods mic has poor accuracy | AirPods switch to Bluetooth HFP/SCO when used as a mic. Use the built-in mic for input — see dispatcher/README.md → "AirPods / Bluetooth headset note". |
-| No TTS heard on Linux | Headset likely in HFP mode (silent output). Pin it to A2DP and use the built-in mic — see dispatcher/README.md. Ensure `pw-play` is installed (`pipewire-bin`). |
-| Dispatcher says "token mismatch" | Re-run `/voice:configure` with the correct token, or rotate: `voice-dispatcher config rotate-token jarvis` |
+| Symptom                                       | Check                                                                                                                                                                                                |
+| --------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `-32000` on plugin start                      | Dispatcher not running, or `config.json` missing/in wrong path. Run `/voice:status` to check. Config must be at `~/.claude/plugins/data/voice-voice-channel/config.json` (not in a `voice/` subdir). |
+| Plugin shows "disconnected" (close code 1006) | Nothing listening at the dispatcher URL. Check dispatcher is running (`lsof -i :7355` on host) and bound to `0.0.0.0`, not `127.0.0.1`.                                                              |
+| No response to voice                          | Dispatcher running but mic not triggering. macOS: check mic permission (System Settings → Privacy → Microphone). Linux: check `systemctl --user status voice-dispatcher` and mic levels.             |
+| mDNS not resolving                            | Use the laptop's LAN IP instead: `ws://192.168.x.y:7355`. Some mesh-router firmware suppresses mDNS.                                                                                                 |
+| AirPods mic has poor accuracy                 | AirPods switch to Bluetooth HFP/SCO when used as a mic. Use the built-in mic for input — see dispatcher/README.md → "AirPods / Bluetooth headset note".                                              |
+| No TTS heard on Linux                         | Headset likely in HFP mode (silent output). Pin it to A2DP and use the built-in mic — see dispatcher/README.md. Ensure `pw-play` is installed (`pipewire-bin`).                                      |
+| Dispatcher says "token mismatch"              | Re-run `/voice:configure` with the correct token, or rotate: `voice-dispatcher config rotate-token jarvis`                                                                                           |
 
 ## Adding more agents
 
@@ -195,13 +199,14 @@ The dispatcher binds `0.0.0.0:7355` and uses a bearer token in the `hello` messa
 Trust model: **home LAN is trusted** (WPA2/WPA3 WiFi, no port-forwarding, single-user setup).
 
 Upgrade paths (not v1, see [PROTOCOL.md](PROTOCOL.md)):
+
 - WSS with self-signed cert + fingerprint pinning
 - Tailscale/WireGuard tunnel between laptop and agent PC
 
 ### Permission relay (opt-in, OFF by default)
 
 The voice channel can relay Claude's tool-permission prompts: the dispatcher
-speaks *"Bash needs permission, say yes or no followed by alpha bravo…"* and you
+speaks _"Bash needs permission, say yes or no followed by alpha bravo…"_ and you
 answer by voice. The 5-letter request id must be spoken, so a bare "yes" from a TV
 won't approve anything. Still, **the mic does not authenticate the speaker** —
 enable it (`enable_permission_relay` in both config.yaml and `/voice:configure`)
@@ -217,12 +222,12 @@ This is not the same as wake-word spotting (which would only transcribe on a mod
 
 ## Requirements
 
-| Component | Platform | Status |
-|---|---|---|
-| voice-dispatcher | macOS | v1 critical-path |
-| voice-dispatcher | Linux laptop | v1 acceptance-gated |
-| voice-dispatcher | Windows laptop | v1 acceptance-gated |
-| voice-channel plugin | Linux + Docker | v1 critical-path |
+| Component            | Platform       | Status              |
+| -------------------- | -------------- | ------------------- |
+| voice-dispatcher     | macOS          | v1 critical-path    |
+| voice-dispatcher     | Linux laptop   | v1 acceptance-gated |
+| voice-dispatcher     | Windows laptop | v1 acceptance-gated |
+| voice-channel plugin | Linux + Docker | v1 critical-path    |
 
 ## Protocol
 
