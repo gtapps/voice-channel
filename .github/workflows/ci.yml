@@ -1,0 +1,41 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      # Plugin deps first — provides tsx so the dispatcher's WS integration
+      # test runs instead of skipping, plus vitest for the plugin suite.
+      - name: Install plugin deps
+        run: npm ci --prefix plugin/voice
+
+      # Lean install: the dispatcher's audio libs (faster-whisper, piper-tts,
+      # onnxruntime…) are imported lazily, so the test suite runs without them.
+      # --no-deps keeps CI fast and avoids fragile audio-wheel installs.
+      - name: Install dispatcher (lean)
+        run: |
+          pip install --no-deps -e dispatcher
+          pip install pytest pytest-asyncio websockets pyyaml click numpy
+
+      - name: Dispatcher tests
+        run: python -m pytest -q
+        working-directory: dispatcher
+
+      - name: Plugin tests
+        run: npm test
+        working-directory: plugin/voice
