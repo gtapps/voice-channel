@@ -7,12 +7,14 @@ PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT:?CLAUDE_PLUGIN_ROOT is not set}"
 STAMP="$PLUGIN_DATA/.package.json.stamp"
 
 # Install deps when node_modules are missing or package.json has changed.
-# npm install --prefix installs into $PLUGIN_DATA/node_modules;
-# passing $PLUGIN_ROOT installs that local package + its deps.
+# Copy package.json to PLUGIN_DATA and run npm install there so that all
+# declared dependencies land in PLUGIN_DATA/node_modules.  Passing a local
+# path to npm install only installs that package itself (1 pkg), not its deps.
 if [ ! -d "$PLUGIN_DATA/node_modules/@modelcontextprotocol" ] || \
    ! cmp -s "$PLUGIN_ROOT/package.json" "$STAMP" 2>/dev/null; then
   echo "voice: installing dependencies into $PLUGIN_DATA..." >&2
-  npm install --omit=dev --no-package-lock --prefix "$PLUGIN_DATA" "$PLUGIN_ROOT" >&2
+  cp "$PLUGIN_ROOT/package.json" "$PLUGIN_DATA/package.json"
+  npm install --omit=dev --no-package-lock --prefix "$PLUGIN_DATA" >&2
   cp "$PLUGIN_ROOT/package.json" "$STAMP"
 fi
 
