@@ -8,14 +8,23 @@ replies back to be spoken aloud.
 
 ## Install
 
-```
-/plugin install voice-channel
+Inside the Claude Code container:
+
+```bash
+claude plugin marketplace add gtapps/voice-channel   # once
+claude plugin install voice@voice-channel --scope local
 ```
 
-Then configure:
+Then configure (writes `${CLAUDE_PLUGIN_DATA}/config.json`):
 
 ```
 /voice:configure
+```
+
+Start a session with the channel loaded:
+
+```bash
+claude --dangerously-load-development-channels plugin:voice@voice-channel
 ```
 
 ## Requirements

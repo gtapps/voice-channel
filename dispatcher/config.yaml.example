@@ -38,7 +38,7 @@ whisper:
 #
 # Adding an agent is a 3-step recipe (not just one YAML edit):
 #   1.  voice-dispatcher config add-agent <id> --triggers "..." --voice <voice>
-#   2.  /plugin install voice-channel  inside that agent's container
+#   2.  claude plugin install voice@voice-channel --scope local  in that container
 #   3.  /voice:configure  with the matching dispatcher URL and token
 
 agents:

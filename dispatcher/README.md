@@ -57,7 +57,8 @@ Copy the printed token. Inside the agent's container, run `/voice:configure` wit
 
 Adding an agent is a **3-step recipe** — not a one-YAML-line operation:
 1. `voice-dispatcher config add-agent <id> ...` (this command)
-2. `/plugin install voice-channel` inside that agent's container
+2. `claude plugin install voice@voice-channel --scope local` inside that agent's container
+   (first add the marketplace once: `claude plugin marketplace add gtapps/voice-channel`)
 3. `/voice:configure` inside that agent's container (dispatcher URL + token)
 
 ### 3. Download a Piper voice
