@@ -36,7 +36,25 @@ cd dispatcher
 # or: ./install-linux.sh   (Linux laptop, acceptance-gated)
 ```
 
-### 2. Add a hermit to the dispatcher
+The installer starts the dispatcher as a service (launchd / systemd `--user`)
+with an empty config — you'll restart it in step 4 once a hermit is registered.
+
+### 2. Download a Piper voice
+
+`add-hermit` (next step) references a `.onnx` voice file that must already exist:
+
+```bash
+VOICES=~/.local/share/voice-dispatcher/voices
+curl -L -o "$VOICES/en_US-lessac-medium.onnx" \
+  https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0/en/en_US/lessac/medium/en_US-lessac-medium.onnx
+curl -L -o "$VOICES/en_US-lessac-medium.onnx.json" \
+  https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0/en/en_US/lessac/medium/en_US-lessac-medium.onnx.json
+```
+
+Browse other voices: https://github.com/rhasspy/piper/blob/master/VOICES.md
+(The Whisper STT model downloads automatically on first dispatcher run.)
+
+### 3. Add a hermit to the dispatcher
 
 ```bash
 voice-dispatcher config add-hermit jarvis \
@@ -44,9 +62,22 @@ voice-dispatcher config add-hermit jarvis \
   --voice en_US-lessac-medium.onnx
 ```
 
-The command prints the token. Copy it.
+The command prints the token. Copy it — you'll need it in step 6.
 
-### 3. Install the plugin in the hermit container
+### 4. Restart the dispatcher to load the new hermit
+
+```bash
+# macOS:
+launchctl kickstart -k gui/$(id -u)/com.gtapps.voice-dispatcher
+# Linux:
+systemctl --user restart voice-dispatcher
+# Or run in the foreground for testing (logs to your terminal):
+#   cd dispatcher && python -m voice_dispatcher run
+```
+
+Confirm it's listening: `lsof -i :7355` should show a `python` process on `0.0.0.0:7355`.
+
+### 5. Install the plugin in the hermit container
 
 Run these commands **inside the container** (e.g. via `docker exec -it <container> bash`):
 
@@ -55,7 +86,7 @@ claude plugin marketplace add gtapps/voice-channel
 claude plugin install voice@voice-channel --scope local
 ```
 
-### 4. Configure the plugin
+### 6. Configure the plugin
 
 Find the Docker bridge gateway IP (how the container reaches the host):
 
@@ -81,7 +112,7 @@ mkdir -p "$DATA_DIR"
 cat > "$DATA_DIR/config.json" <<EOF
 {
   "dispatcher_url": "ws://<bridge-ip>:7355",
-  "token": "<token from step 2>",
+  "token": "<token from step 3>",
   "hermit_id": "jarvis",
   "enable_permission_relay": false
 }
@@ -94,7 +125,7 @@ Or run `/voice:configure` inside a Claude Code session — it will prompt for ea
 > `~/.claude/plugins/data/voice-voice-channel/` (without a trailing plugin-name subdir).
 > `config.json` and `status.json` must live directly in that directory.
 
-### 5. Start a Claude Code session with the voice channel
+### 7. Start a Claude Code session with the voice channel
 
 ```bash
 # Inside the container:
@@ -105,7 +136,12 @@ claude --dangerously-load-development-channels plugin:voice@voice-channel
 > This flag is required for community (non-Anthropic-signed) channel plugins.
 > The dispatcher must be running on your laptop before Claude starts.
 
-### 6. Test
+> **First launch:** `bootstrap.sh` runs `npm install` the first time the MCP
+> server starts (~10s). If Claude Code reports `-32000` on the very first
+> attempt, the install was still finishing — `/plugin` → reconnect, or restart
+> the session, and it connects. Subsequent launches are instant.
+
+### 8. Test
 
 Say "hey jarvis, what time is it?" — Claude should reply aloud.
 
