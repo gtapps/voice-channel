@@ -91,7 +91,7 @@ def _play_tick(output_device: Optional[int] = None) -> None:
         import sounddevice as sd
 
         t = np.linspace(0, 0.04, int(SAMPLE_RATE * 0.04), endpoint=False)
-        tone = (np.sin(2 * math.pi * 600 * t) * 0.2).astype(np.float32)
+        tone = (np.sin(2 * math.pi * 600 * t) * 0.2).astype(np.float32).reshape(-1, 1)
         sd.play(tone, SAMPLE_RATE, device=output_device, blocking=True)
     except Exception as exc:
         logger.debug("tick: %s", exc)
@@ -403,15 +403,13 @@ class AudioPipeline:
             self._play_tts(hermit_id, uid, text, voice_filename)
 
     def _play_tts(self, hermit_id: str, uid: str, text: str, voice_filename: str) -> None:
-        """Synthesise TTS with Piper and play with sounddevice (half-duplex)."""
+        """Synthesise TTS with Piper and play via the system audio stack (half-duplex)."""
         voice = self._load_piper_voice(voice_filename)
         if voice is None:
             logger.error("TTS skipped — voice not available")
             return
 
         try:
-            import sounddevice as sd  # type: ignore
-            import numpy as np
             import wave
 
             self._speaking.set()
@@ -419,21 +417,59 @@ class AudioPipeline:
 
             buf = io.BytesIO()
             with wave.open(buf, "wb") as wf:
-                voice.synthesize(text, wf)
+                # piper-tts >=1.3 renamed the wave-writing method to
+                # synthesize_wav(); plain synthesize() now returns an AudioChunk
+                # iterable and writes nothing. synthesize_wav sets the WAV header
+                # automatically (set_wav_format=True default).
+                voice.synthesize_wav(text, wf)
 
-            buf.seek(0)
-            with wave.open(buf, "rb") as wf:
-                rate = wf.getframerate()
-                frames = wf.readframes(wf.getnframes())
-                audio = np.frombuffer(frames, dtype=np.int16).astype(np.float32) / 32768.0
-
-            sd.play(audio, rate, device=self._resolved_output, blocking=True)
-            sd.wait()
+            self._play_wav(buf.getvalue())
 
         except Exception as exc:
             logger.error("TTS playback failed: %s", exc)
         finally:
             self._speaking.clear()
+
+    def _play_wav(self, wav_bytes: bytes) -> None:
+        """Play WAV bytes through the system audio output.
+
+        On Linux, use pw-play (PipeWire) so audio reaches whatever sink PipeWire
+        has selected as default (e.g. AirPods in A2DP mode) rather than going to
+        the raw ALSA hw:x,y device that sounddevice would open by default.
+        pw-play needs a real file — it can't parse a WAV header from a pipe —
+        so we write to a temp file. Falls back to sounddevice if pw-play fails.
+        """
+        if sys.platform.startswith('linux'):
+            import shutil
+            import subprocess
+            import tempfile
+            pw_play = shutil.which('pw-play')
+            if pw_play:
+                tmp_path = None
+                try:
+                    with tempfile.NamedTemporaryFile(suffix='.wav', delete=False) as tmp:
+                        tmp.write(wav_bytes)
+                        tmp_path = tmp.name
+                    subprocess.run([pw_play, tmp_path], check=True)
+                    return
+                except (subprocess.CalledProcessError, FileNotFoundError) as exc:
+                    logger.debug("pw-play failed (%s) — falling back to sounddevice", exc)
+                finally:
+                    if tmp_path is not None:
+                        os.unlink(tmp_path)
+
+        import sounddevice as sd  # type: ignore
+        import numpy as np
+        import wave
+        buf = io.BytesIO(wav_bytes)
+        with wave.open(buf, "rb") as wf:
+            rate = wf.getframerate()
+            n_ch = wf.getnchannels()
+            frames = wf.readframes(wf.getnframes())
+            audio = np.frombuffer(frames, dtype=np.int16).astype(np.float32) / 32768.0
+            if n_ch > 1:
+                audio = audio.reshape(-1, n_ch)
+        sd.play(audio, rate, device=self._resolved_output, blocking=True)
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────

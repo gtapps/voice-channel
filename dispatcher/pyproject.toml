@@ -11,7 +11,7 @@ requires-python = ">=3.11"
 dependencies = [
     # Audio pipeline
     "faster-whisper>=1.0.0",
-    "piper-tts>=1.2.0",
+    "piper-tts>=1.3.0",  # synthesize_wav() API (synthesize() became an AudioChunk iterable)
     "sounddevice>=0.4.6",
     "silero-vad>=5.0",
     "numpy>=1.24",
