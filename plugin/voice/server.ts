@@ -7,6 +7,13 @@
  * long-lived WebSocket. Audio never enters this process.
  */
 
+// We use the low-level `Server`, not the high-level `McpServer`. The SDK marks
+// `Server` @deprecated (TS6385) and steers casual users to `McpServer`, but its
+// own note says "only use Server for advanced use cases" — channels are exactly
+// that. McpServer exposes only tool()/resource()/prompt(); it has no
+// setNotificationHandler and no arbitrary notification(), which the channel
+// contract requires (notifications/claude/channel[/permission]). Every official
+// reference channel uses `Server` too. Do not migrate.
 import { Server } from '@modelcontextprotocol/sdk/server/index.js'
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { ListToolsRequestSchema, CallToolRequestSchema } from '@modelcontextprotocol/sdk/types.js'
@@ -175,17 +182,20 @@ function connect(): void {
           dispatcher_url: cfg.dispatcher_url,
           last_utterance_id: msg.utterance_id,
         })
+        // meta must be Record<string,string> — coerce values, drop null/undefined
+        // (e.g. lang is null when the dispatcher auto-detects language).
+        const meta: Record<string, string> = {}
+        for (const [k, v] of Object.entries({
+          utterance_id: msg.utterance_id,
+          trigger: msg.trigger,
+          lang: msg.lang,
+          ts: msg.ts,
+        })) {
+          if (v != null) meta[k] = String(v)
+        }
         mcp.notification({
           method: 'notifications/claude/channel',
-          params: {
-            content: msg.text as string,
-            meta: {
-              utterance_id: msg.utterance_id,
-              trigger: msg.trigger,
-              lang: msg.lang,
-              ts: msg.ts,
-            },
-          },
+          params: { content: msg.text as string, meta },
         }).catch(err => {
           process.stderr.write(`voice: failed to deliver transcript to Claude: ${err}\n`)
         })
