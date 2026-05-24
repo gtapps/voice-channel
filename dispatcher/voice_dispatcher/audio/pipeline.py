@@ -201,9 +201,8 @@ class AudioPipeline:
         # Half-duplex: set True while TTS is playing
         self._speaking = threading.Event()
 
-        # Permission relay: (hermit_id, request_id) while awaiting a spoken
-        # verdict, else None.  Set/cleared from the bus-callback thread and read
-        # from the audio-worker thread; both ops are atomic assignments.
+        # Permission relay: (hermit_id, request_id) while awaiting a spoken verdict, else None.
+        # Set/cleared on the bus-callback thread, read on the audio-worker thread; atomic in CPython.
         self._pending_permission: Optional[tuple[str, str]] = None
         self._pending_permission_deadline: float = 0.0
 
@@ -437,9 +436,6 @@ class AudioPipeline:
         if not transcript:
             return
 
-        # Permission-relay priority mode: while awaiting a spoken verdict, parse
-        # this utterance as a verdict instead of matching triggers.  The local
-        # terminal dialog remains the always-available fallback.
         if self._pending_permission is not None:
             if time.monotonic() > self._pending_permission_deadline:
                 logger.info("permission verdict window expired — terminal-only fallback")
@@ -489,8 +485,11 @@ class AudioPipeline:
 
     def _on_permission_requested(self, event) -> None:
         """Bus callback — speak the phonetic prompt and open the verdict window."""
-        self._pending_permission = (event.hermit_id, event.request_id)
+        # Write the deadline BEFORE _pending_permission: the audio-worker thread
+        # keys off `_pending_permission is not None`, so it must never observe a
+        # non-None pending with a stale deadline (which would expire it instantly).
         self._pending_permission_deadline = time.monotonic() + PERMISSION_LISTEN_WINDOW
+        self._pending_permission = (event.hermit_id, event.request_id)
         prompt = format_permission_prompt(event.tool_name, event.request_id)
         voice = self._hermits.get(event.hermit_id, {}).get("voice", "")
         logger.info("permission prompt: hermit=%r id=%r tool=%r",
