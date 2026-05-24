@@ -62,5 +62,5 @@ echo "  System Settings → Privacy & Security → Microphone → enable voice-d
 echo ""
 echo "Next steps:"
 echo "  1. Edit $CONFIG_DIR/config.yaml"
-echo "  2. voice-dispatcher config add-hermit jarvis --triggers 'hey jarvis,hermit' --voice en_US-lessac-medium.onnx"
+echo "  2. voice-dispatcher config add-agent jarvis --triggers 'hey jarvis,agent' --voice en_US-lessac-medium.onnx"
 echo "  3. Restart: launchctl kickstart -k gui/$(id -u)/com.gtapps.voice-dispatcher"

@@ -2,7 +2,7 @@
 
 Claude Code channel plugin — MCP ↔ WebSocket bridge for the voice-dispatcher service.
 
-Runs inside each hermit container. Receives transcribed voice commands from the dispatcher
+Runs inside each agent container. Receives transcribed voice commands from the dispatcher
 on the operator's laptop, delivers them to Claude as channel notifications, and sends Claude's
 replies back to be spoken aloud.
 
@@ -21,14 +21,14 @@ Then configure:
 ## Requirements
 
 - The [voice-dispatcher](../../dispatcher/README.md) service must be running on your laptop
-- The dispatcher must have this hermit registered (`voice-dispatcher config add-hermit`)
+- The dispatcher must have this agent registered (`voice-dispatcher config add-agent`)
 - No audio hardware or Python dependencies are needed inside the container
 
 ## Skills
 
 | Skill | Description |
 |---|---|
-| `/voice:configure` | Set dispatcher URL, token, hermit ID, and permission-relay opt-in |
+| `/voice:configure` | Set dispatcher URL, token, agent ID, and permission-relay opt-in |
 | `/voice:status` | Show connection state, last utterance, and any errors |
 
 ## How it works
@@ -57,7 +57,7 @@ Config lives at `${CLAUDE_PLUGIN_DATA}/config.json`:
 {
   "dispatcher_url": "ws://laptop.local:7355",
   "token": "your-token-here",
-  "hermit_id": "jarvis",
+  "agent_id": "jarvis",
   "enable_permission_relay": false
 }
 ```

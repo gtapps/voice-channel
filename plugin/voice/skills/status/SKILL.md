@@ -13,7 +13,7 @@ Read `${CLAUDE_PLUGIN_DATA}/status.json` and `${CLAUDE_PLUGIN_DATA}/config.json`
 
 1. **Connection state** — `connecting`, `connected`, or `disconnected` (from `status.json`)
 2. **Dispatcher URL** — from `config.json`, or "not configured" if no config exists
-3. **Hermit ID** — from `config.json`
+3. **Agent ID** — from `config.json`
 4. **Permission relay** — enabled or disabled
 5. **Last activity** — `last_utterance_id` and `ts` from `status.json` if present
 6. **Last error** — `last_close_code`, `last_close_reason`, or any error field if present
@@ -35,7 +35,7 @@ Voice channel status
 ────────────────────
 State:            connected
 Dispatcher:       ws://laptop.local:7355
-Hermit ID:        jarvis
+Agent ID:        jarvis
 Permission relay: disabled
 Last utterance:   u-1748012345 (2026-05-24T10:30:00Z)
 ```

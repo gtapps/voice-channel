@@ -13,10 +13,10 @@ from voice_dispatcher.core.models import (
     SpeakRequest,
     PermissionRequested,
     PermissionVerdict,
-    HermitConnected,
-    HermitDisconnected,
+    AgentConnected,
+    AgentDisconnected,
 )
-from voice_dispatcher.core.session import HermitConfig, SessionRegistry
+from voice_dispatcher.core.session import AgentConfig, SessionRegistry
 
 
 # ── Fixtures ──────────────────────────────────────────────────────────────────
@@ -24,10 +24,10 @@ from voice_dispatcher.core.session import HermitConfig, SessionRegistry
 def make_dispatcher(enable_permission_relay: bool = False) -> Dispatcher:
     bus = EventBus()
     registry = SessionRegistry()
-    cfg = HermitConfig(
-        hermit_id="jarvis",
+    cfg = AgentConfig(
+        agent_id="jarvis",
         token="test-token",
-        triggers=["hey jarvis", "hermit"],
+        triggers=["hey jarvis", "agent"],
         language="en",
         voice="en_US-lessac-medium.onnx",
         enable_permission_relay=enable_permission_relay,
@@ -51,7 +51,7 @@ def test_bus_basic_fanout() -> None:
     bus.subscribe(TranscriptDispatched, received.append)
 
     evt = TranscriptDispatched(
-        hermit_id="jarvis", utterance_id="u-1", text="hello",
+        agent_id="jarvis", utterance_id="u-1", text="hello",
         lang="en", trigger="hey jarvis", ts="2026-01-01T00:00:00Z",
     )
     bus.emit(evt)
@@ -65,7 +65,7 @@ def test_bus_multiple_subscribers() -> None:
     bus.subscribe(SpeakRequest, a.append)
     bus.subscribe(SpeakRequest, b.append)
 
-    evt = SpeakRequest(hermit_id="jarvis", utterance_id="u-1", text="hi")
+    evt = SpeakRequest(agent_id="jarvis", utterance_id="u-1", text="hi")
     bus.emit(evt)
     assert a == [evt]
     assert b == [evt]
@@ -76,7 +76,7 @@ def test_bus_unsubscribe() -> None:
     received: list = []
     bus.subscribe(SpeakRequest, received.append)
     bus.unsubscribe(SpeakRequest, received.append)
-    bus.emit(SpeakRequest(hermit_id="jarvis", utterance_id="u-1", text="hi"))
+    bus.emit(SpeakRequest(agent_id="jarvis", utterance_id="u-1", text="hi"))
     assert received == []
 
 
@@ -87,7 +87,7 @@ def test_bus_no_cross_type_fanout() -> None:
     bus.subscribe(SpeakRequest, speak_received.append)
     bus.subscribe(TranscriptDispatched, transcript_received.append)
 
-    bus.emit(SpeakRequest(hermit_id="j", utterance_id="u-1", text="x"))
+    bus.emit(SpeakRequest(agent_id="j", utterance_id="u-1", text="x"))
     assert speak_received and not transcript_received
 
 
@@ -101,7 +101,7 @@ def test_route_transcript_emits_dispatched() -> None:
 
     assert len(events) == 1
     e = events[0]
-    assert e.hermit_id == "jarvis"
+    assert e.agent_id == "jarvis"
     assert e.utterance_id == "u-1"
     assert e.text == "turn on the lights"
     assert e.trigger == "hey jarvis"
@@ -111,7 +111,7 @@ def test_route_transcript_generates_utterance_id_when_none() -> None:
     d = make_dispatcher()
     events = collect(d, TranscriptDispatched)
 
-    d.route_transcript("jarvis", None, "what time is it", "en", "hermit")
+    d.route_transcript("jarvis", None, "what time is it", "en", "agent")
 
     assert len(events) == 1
     uid = events[0].utterance_id
@@ -126,10 +126,10 @@ def test_route_transcript_updates_session() -> None:
     assert session.last_utterance_id == "u-42"
 
 
-def test_route_transcript_unknown_hermit_drops() -> None:
+def test_route_transcript_unknown_agent_drops() -> None:
     d = make_dispatcher()
     events = collect(d, TranscriptDispatched)
-    d.route_transcript("unknown-hermit", "u-1", "hello", "en", "hey")
+    d.route_transcript("unknown-agent", "u-1", "hello", "en", "hey")
     assert events == []
 
 
@@ -142,12 +142,12 @@ def test_speak_emits_speak_request() -> None:
     d.speak("jarvis", "u-1", "Lights are now on.")
 
     assert len(events) == 1
-    assert events[0].hermit_id == "jarvis"
+    assert events[0].agent_id == "jarvis"
     assert events[0].utterance_id == "u-1"
     assert events[0].text == "Lights are now on."
 
 
-def test_speak_unknown_hermit_drops() -> None:
+def test_speak_unknown_agent_drops() -> None:
     d = make_dispatcher()
     events = collect(d, SpeakRequest)
     d.speak("ghost", "u-1", "hi")
@@ -171,7 +171,7 @@ def test_request_permission_enabled_emits_event() -> None:
 
     assert len(events) == 1
     e = events[0]
-    assert e.hermit_id == "jarvis"
+    assert e.agent_id == "jarvis"
     assert e.request_id == "abcde"
     assert e.tool_name == "Bash"
     assert e.description == "Run a shell command"
@@ -197,7 +197,7 @@ def test_submit_verdict_emits_event() -> None:
 
     assert len(events) == 1
     v = events[0]
-    assert v.hermit_id == "jarvis"
+    assert v.agent_id == "jarvis"
     assert v.request_id == "abcde"
     assert v.behavior == "allow"
 
@@ -230,10 +230,10 @@ def test_submit_verdict_invalid_behavior_drops() -> None:
 
 def test_on_connected_emits_event() -> None:
     d = make_dispatcher()
-    events = collect(d, HermitConnected)
+    events = collect(d, AgentConnected)
     d.on_connected("jarvis")
     assert len(events) == 1
-    assert events[0].hermit_id == "jarvis"
+    assert events[0].agent_id == "jarvis"
 
 
 def test_on_connected_sets_session_connected() -> None:
@@ -246,11 +246,11 @@ def test_on_connected_sets_session_connected() -> None:
 
 def test_on_disconnected_emits_event() -> None:
     d = make_dispatcher()
-    events = collect(d, HermitDisconnected)
+    events = collect(d, AgentDisconnected)
     d.on_connected("jarvis")
     d.on_disconnected("jarvis", code=1000, reason="normal close")
     assert len(events) == 1
-    assert events[0].hermit_id == "jarvis"
+    assert events[0].agent_id == "jarvis"
     assert events[0].code == 1000
 
 

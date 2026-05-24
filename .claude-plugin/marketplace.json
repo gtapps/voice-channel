@@ -4,7 +4,7 @@
     "name": "gtapps"
   },
   "metadata": {
-    "description": "Ambient voice control for claude-code-hermit — speak to your hermits from anywhere in the room."
+    "description": "Ambient voice control for any Claude Code instance — speak to your agents from anywhere in the room."
   },
   "plugins": [
     {

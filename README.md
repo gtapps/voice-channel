@@ -1,7 +1,14 @@
 # voice-channel
 
-Ambient voice control for [claude-code-hermit](https://github.com/gtapps/claude-code-hermit).
-Speak to your hermits from anywhere in the room.
+Ambient voice control for **any Claude Code instance**. Speak to your agents from
+anywhere in the room. Originally built for
+[claude-code-hermit](https://github.com/gtapps/claude-code-hermit) — long-running
+agents in Docker — but the plugin is a generic channel and works in any Claude Code
+session (containerized or not).
+
+Throughout these docs, **"agent"** means a Claude Code session you talk to by voice;
+each one is registered with the dispatcher under an `agent_id` and its own trigger
+phrases.
 
 ## Architecture
 
@@ -17,14 +24,14 @@ LAPTOP (macOS or Linux — operator's device, has AirPods / built-in mic)
           ↕  ws://laptop.local:7355  (home LAN)
              or ws://<docker-bridge-gateway>:7355  (same host)
 
-HERMIT PC (Linux + Docker)
-  hermit container
+TARGET MACHINE (where Claude Code runs — Linux + Docker, or the same laptop)
+  Claude Code session
     └── voice-channel plugin (TypeScript / Node)
-          └── MCP channel server → Claude Code session
+          └── MCP channel server ↔ dispatcher WebSocket
 ```
 
 The dispatcher owns all audio; the plugin is a thin (~200 LOC) WebSocket ↔ MCP bridge.
-No audio libraries or Python code enter the container.
+No audio libraries or Python code enter the Claude Code environment.
 
 ## Install order
 
@@ -37,11 +44,11 @@ cd dispatcher
 ```
 
 The installer starts the dispatcher as a service (launchd / systemd `--user`)
-with an empty config — you'll restart it in step 4 once a hermit is registered.
+with an empty config — you'll restart it in step 4 once an agent is registered.
 
 ### 2. Download a Piper voice
 
-`add-hermit` (next step) references a `.onnx` voice file that must already exist:
+`add-agent` (next step) references a `.onnx` voice file that must already exist:
 
 ```bash
 VOICES=~/.local/share/voice-dispatcher/voices
@@ -54,17 +61,17 @@ curl -L -o "$VOICES/en_US-lessac-medium.onnx.json" \
 Browse other voices: https://github.com/rhasspy/piper/blob/master/VOICES.md
 (The Whisper STT model downloads automatically on first dispatcher run.)
 
-### 3. Add a hermit to the dispatcher
+### 3. Add an agent to the dispatcher
 
 ```bash
-voice-dispatcher config add-hermit jarvis \
-  --triggers "hey jarvis,hermit,ó hermit" \
+voice-dispatcher config add-agent jarvis \
+  --triggers "hey jarvis,agent,ó agent" \
   --voice en_US-lessac-medium.onnx
 ```
 
 The command prints the token. Copy it — you'll need it in step 6.
 
-### 4. Restart the dispatcher to load the new hermit
+### 4. Restart the dispatcher to load the new agent
 
 ```bash
 # macOS:
@@ -77,7 +84,7 @@ systemctl --user restart voice-dispatcher
 
 Confirm it's listening: `lsof -i :7355` should show a `python` process on `0.0.0.0:7355`.
 
-### 5. Install the plugin in the hermit container
+### 5. Install the plugin in the agent container
 
 Run these commands **inside the container** (e.g. via `docker exec -it <container> bash`):
 
@@ -113,7 +120,7 @@ cat > "$DATA_DIR/config.json" <<EOF
 {
   "dispatcher_url": "ws://<bridge-ip>:7355",
   "token": "<token from step 3>",
-  "hermit_id": "jarvis",
+  "agent_id": "jarvis",
   "enable_permission_relay": false
 }
 EOF
@@ -149,7 +156,7 @@ Say "hey jarvis, what time is it?" — Claude should reply aloud.
 
 | Setup | URL to use |
 |---|---|
-| Dispatcher and hermit on the **same machine** (hermit in Docker) | `ws://<bridge-gateway>:7355` — find with the Python snippet above; typically `172.17.0.1` or `172.18.0.1` |
+| Dispatcher and agent on the **same machine** (agent in Docker) | `ws://<bridge-gateway>:7355` — find with the Python snippet above; typically `172.17.0.1` or `172.18.0.1` |
 | Dispatcher on a **separate LAN laptop** (typical setup) | `ws://laptop.local:7355` (mDNS) or `ws://192.168.x.y:7355` (static IP) |
 
 The dispatcher binds `0.0.0.0:7355` by default so both cases work without config changes.
@@ -166,12 +173,12 @@ The dispatcher binds `0.0.0.0:7355` by default so both cases work without config
 | No TTS heard on Linux | Headset likely in HFP mode (silent output). Pin it to A2DP and use the built-in mic — see dispatcher/README.md. Ensure `pw-play` is installed (`pipewire-bin`). |
 | Dispatcher says "token mismatch" | Re-run `/voice:configure` with the correct token, or rotate: `voice-dispatcher config rotate-token jarvis` |
 
-## Adding more hermits
+## Adding more agents
 
-Each additional hermit needs three steps (not a one-YAML-line operation):
+Each additional agent needs three steps (not a one-YAML-line operation):
 
-1. `voice-dispatcher config add-hermit <id> --triggers "..." --voice <voice.onnx>` on the laptop
-2. `claude plugin install voice@voice-channel --scope local` inside that hermit's container
+1. `voice-dispatcher config add-agent <id> --triggers "..." --voice <voice.onnx>` on the laptop
+2. `claude plugin install voice@voice-channel --scope local` inside that agent's container
 3. Write `config.json` with the matching dispatcher URL + token (or run `/voice:configure`)
 
 ## Security
@@ -181,7 +188,7 @@ Trust model: **home LAN is trusted** (WPA2/WPA3 WiFi, no port-forwarding, single
 
 Upgrade paths (not v1, see [PROTOCOL.md](PROTOCOL.md)):
 - WSS with self-signed cert + fingerprint pinning
-- Tailscale/WireGuard tunnel between laptop and hermit PC
+- Tailscale/WireGuard tunnel between laptop and agent PC
 
 ### Permission relay (opt-in, OFF by default)
 

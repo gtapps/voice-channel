@@ -1,7 +1,7 @@
 # voice-dispatcher
 
 Host service for voice control — runs on the operator's laptop, owns the mic and speakers.
-Listens for trigger phrases, transcribes via Whisper-tiny, and routes commands to hermit
+Listens for trigger phrases, transcribes via Whisper-tiny, and routes commands to agent
 containers over WebSocket.
 
 ## Requirements
@@ -45,20 +45,20 @@ Key settings:
 - `audio.output_device` — leave `null` to use system default (AirPods for output is fine)
 - `whisper.model` — `tiny` is the default; `base` improves accuracy at ~2× CPU cost
 
-### 2. Register a hermit
+### 2. Register an agent
 
 ```bash
-voice-dispatcher config add-hermit jarvis \
-  --triggers "hey jarvis,hermit,ó hermit" \
+voice-dispatcher config add-agent jarvis \
+  --triggers "hey jarvis,agent,ó agent" \
   --voice en_US-lessac-medium.onnx
 ```
 
-Copy the printed token. Inside the hermit's container, run `/voice:configure` with this token.
+Copy the printed token. Inside the agent's container, run `/voice:configure` with this token.
 
-Adding a hermit is a **3-step recipe** — not a one-YAML-line operation:
-1. `voice-dispatcher config add-hermit <id> ...` (this command)
-2. `/plugin install voice-channel` inside that hermit's container
-3. `/voice:configure` inside that hermit's container (dispatcher URL + token)
+Adding an agent is a **3-step recipe** — not a one-YAML-line operation:
+1. `voice-dispatcher config add-agent <id> ...` (this command)
+2. `/plugin install voice-channel` inside that agent's container
+3. `/voice:configure` inside that agent's container (dispatcher URL + token)
 
 ### 3. Download a Piper voice
 
@@ -95,8 +95,8 @@ python -m voice_dispatcher run --no-adapter
 ```bash
 voice-dispatcher run                            # start everything
 voice-dispatcher run --no-adapter               # audio+core only (M2 verification)
-voice-dispatcher config add-hermit <id> ...     # register a hermit
-voice-dispatcher config list                    # list registered hermits
+voice-dispatcher config add-agent <id> ...     # register an agent
+voice-dispatcher config list                    # list registered agents
 voice-dispatcher config rotate-token <id>       # generate a new token
 voice-dispatcher list-devices                   # list audio devices
 ```
@@ -129,7 +129,7 @@ ambient noise, lower its gain: `pactl set-source-volume <source> 20%`.
 
 ## Permission relay (opt-in, OFF by default)
 
-When `enable_permission_relay: true` for a hermit (config.yaml) **and** the plugin
+When `enable_permission_relay: true` for an agent (config.yaml) **and** the plugin
 is configured with it on (`/voice:configure`), the dispatcher relays Claude's
 tool-permission prompts through voice:
 

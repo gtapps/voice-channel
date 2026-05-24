@@ -2,7 +2,7 @@
 WebSocket adapter (v1) — the only place that knows about WS frames.
 
 Responsibilities:
-  - Accept incoming hermit connections
+  - Accept incoming agent connections
   - Verify token in the hello frame; close with 4001 on failure
   - Verify protocol version in hello; close with 4000 on mismatch
   - Parse inbound frames and call core handler functions
@@ -20,7 +20,7 @@ from typing import Optional
 
 from ..core.handlers import Dispatcher
 from ..core.models import TranscriptDispatched, PermissionVerdict
-from ..core.session import HermitConfig, SessionRegistry
+from ..core.session import AgentConfig, SessionRegistry
 
 logger = logging.getLogger(__name__)
 
@@ -31,23 +31,23 @@ class WebSocketAdapter:
     """
     Wraps a websockets server.  Call run() to serve indefinitely.
 
-    All hermit-config is read from the top-level config dict once at startup.
+    All agent-config is read from the top-level config dict once at startup.
     """
 
     def __init__(self, dispatcher: Dispatcher, config: dict) -> None:
         self._dispatcher = dispatcher
         self._config = config
 
-        # token → hermit_id lookup table
+        # token → agent_id lookup table
         self._token_map: dict[str, str] = {}
-        # hermit_id → open websocket (one connection per hermit)
+        # agent_id → open websocket (one connection per agent)
         self._connections: dict[str, object] = {}
 
-        # Register all configured hermits in the session registry
-        for hermit_id, hcfg in config.get("hermits", {}).items():
+        # Register all configured agents in the session registry
+        for agent_id, hcfg in config.get("agents", {}).items():
             token = hcfg.get("websocket_token", "")
-            hc = HermitConfig(
-                hermit_id=hermit_id,
+            hc = AgentConfig(
+                agent_id=agent_id,
                 token=token,
                 triggers=hcfg.get("triggers", []),
                 language=hcfg.get("language"),
@@ -55,14 +55,14 @@ class WebSocketAdapter:
                 enable_permission_relay=hcfg.get("enable_permission_relay", False),
             )
             self._dispatcher.registry.register(hc)
-            self._token_map[token] = hermit_id
+            self._token_map[token] = agent_id
 
         # Event loop — set when run() / an external harness starts the server.
         # Bus callbacks are called from arbitrary threads; they need the loop to
         # schedule coroutines safely.
         self._loop: Optional[asyncio.AbstractEventLoop] = None
 
-        # Subscribe to events that need to be pushed to hermits
+        # Subscribe to events that need to be pushed to agents
         self._dispatcher.bus.subscribe(TranscriptDispatched, self._on_transcript_dispatched)
         self._dispatcher.bus.subscribe(PermissionVerdict, self._on_permission_verdict)
 
@@ -86,7 +86,7 @@ class WebSocketAdapter:
     # ── Per-connection handler ────────────────────────────────────────────────
 
     async def _handle_connection(self, ws) -> None:
-        hermit_id: Optional[str] = None
+        agent_id: Optional[str] = None
         try:
             # First message must be hello
             try:
@@ -106,49 +106,49 @@ class WebSocketAdapter:
 
             # Token authentication
             token = msg.get("token", "")
-            hermit_id = self._token_map.get(token)
-            if hermit_id is None:
+            agent_id = self._token_map.get(token)
+            if agent_id is None:
                 await ws.close(4001, "authentication failed")
                 logger.warning("rejected connection: invalid token")
                 return
 
-            logger.info("hermit connected: %s", hermit_id)
-            self._connections[hermit_id] = ws
-            self._dispatcher.on_connected(hermit_id)
+            logger.info("agent connected: %s", agent_id)
+            self._connections[agent_id] = ws
+            self._dispatcher.on_connected(agent_id)
 
             # Message loop
             async for raw in ws:
-                await self._handle_message(hermit_id, ws, raw)
+                await self._handle_message(agent_id, ws, raw)
 
         except Exception as exc:
             logger.debug("connection error: %s", exc)
         finally:
-            if hermit_id:
-                self._connections.pop(hermit_id, None)
+            if agent_id:
+                self._connections.pop(agent_id, None)
                 close_code = ws.close_code or 0
                 close_reason = ws.close_reason or ""
-                self._dispatcher.on_disconnected(hermit_id, close_code, close_reason)
-                logger.info("hermit disconnected: %s (code=%s)", hermit_id, close_code)
+                self._dispatcher.on_disconnected(agent_id, close_code, close_reason)
+                logger.info("agent disconnected: %s (code=%s)", agent_id, close_code)
 
-    async def _handle_message(self, hermit_id: str, ws, raw: str) -> None:
+    async def _handle_message(self, agent_id: str, ws, raw: str) -> None:
         try:
             msg = json.loads(raw)
         except json.JSONDecodeError:
-            logger.debug("bad JSON from %s", hermit_id)
+            logger.debug("bad JSON from %s", agent_id)
             return
 
         msg_type = msg.get("type")
 
         if msg_type == "speak":
             self._dispatcher.speak(
-                hermit_id=hermit_id,
+                agent_id=agent_id,
                 utterance_id=msg.get("utterance_id", ""),
                 text=msg.get("text", ""),
             )
 
         elif msg_type == "permission_request":
             self._dispatcher.request_permission(
-                hermit_id=hermit_id,
+                agent_id=agent_id,
                 request_id=msg.get("request_id", ""),
                 tool_name=msg.get("tool_name", ""),
                 description=msg.get("description", ""),
@@ -159,7 +159,7 @@ class WebSocketAdapter:
             await ws.send(json.dumps({"type": "pong"}))
 
         else:
-            logger.debug("unknown message type from %s: %r", hermit_id, msg_type)
+            logger.debug("unknown message type from %s: %r", agent_id, msg_type)
 
     # ── Bus → WS fanout ───────────────────────────────────────────────────────
 
@@ -171,10 +171,10 @@ class WebSocketAdapter:
         self._loop.call_soon_threadsafe(self._loop.create_task, coro)
 
     def _on_transcript_dispatched(self, event: TranscriptDispatched) -> None:
-        """Push a transcript frame to the hermit's WebSocket."""
-        ws = self._connections.get(event.hermit_id)
+        """Push a transcript frame to the agent's WebSocket."""
+        ws = self._connections.get(event.agent_id)
         if ws is None:
-            logger.warning("transcript dropped — hermit %r not connected", event.hermit_id)
+            logger.warning("transcript dropped — agent %r not connected", event.agent_id)
             return
         payload = json.dumps({
             "type": "transcript",
@@ -187,8 +187,8 @@ class WebSocketAdapter:
         self._schedule(ws.send(payload))
 
     def _on_permission_verdict(self, event: PermissionVerdict) -> None:
-        """Push a permission_verdict frame to the hermit's WebSocket."""
-        ws = self._connections.get(event.hermit_id)
+        """Push a permission_verdict frame to the agent's WebSocket."""
+        ws = self._connections.get(event.agent_id)
         if ws is None:
             return
         payload = json.dumps({

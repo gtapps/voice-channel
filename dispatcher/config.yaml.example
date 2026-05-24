@@ -31,23 +31,23 @@ whisper:
   device: "cpu"         # cpu | cuda
   compute_type: "int8"  # int8 | float16 | float32
 
-# ── Hermits ────────────────────────────────────────────────────────────────────
+# ── Agents ────────────────────────────────────────────────────────────────────
 #
-# Each hermit maps a set of trigger phrases to a WebSocket token and a Piper
-# voice file.  Run  voice-dispatcher config add-hermit <id>  to register one.
+# Each agent maps a set of trigger phrases to a WebSocket token and a Piper
+# voice file.  Run  voice-dispatcher config add-agent <id>  to register one.
 #
-# Adding a hermit is a 3-step recipe (not just one YAML edit):
-#   1.  voice-dispatcher config add-hermit <id> --triggers "..." --voice <voice>
-#   2.  /plugin install voice-channel  inside that hermit's container
+# Adding an agent is a 3-step recipe (not just one YAML edit):
+#   1.  voice-dispatcher config add-agent <id> --triggers "..." --voice <voice>
+#   2.  /plugin install voice-channel  inside that agent's container
 #   3.  /voice:configure  with the matching dispatcher URL and token
 
-hermits:
+agents:
   jarvis:
     # Trigger phrases — fuzzy-matched (1-2 char edit distance), case-insensitive
     triggers:
       - "hey jarvis"
-      - "hermit"
-      - "ó hermit"
+      - "agent"
+      - "ó agent"
     language: en            # hint passed to Whisper; null = auto-detect
     voice: en_US-lessac-medium.onnx
     websocket_token: "REPLACE_WITH_TOKEN"
@@ -60,7 +60,7 @@ hermits:
     # fallback.  Must ALSO be enabled plugin-side via /voice:configure.
     enable_permission_relay: false
 
-  # Additional hermits — uncomment and fill in:
+  # Additional agents — uncomment and fill in:
   # casa:
   #   triggers:
   #     - "hey casa"

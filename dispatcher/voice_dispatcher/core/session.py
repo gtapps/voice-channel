@@ -1,8 +1,8 @@
 """
-Per-hermit Session — tracks connection state and config.
+Per-agent Session — tracks connection state and config.
 
 The Session is the addressable unit inside the core.  All four handler
-functions resolve a hermit_id → Session before acting.
+functions resolve a agent_id → Session before acting.
 """
 
 from __future__ import annotations
@@ -12,9 +12,9 @@ from typing import Optional
 
 
 @dataclass
-class HermitConfig:
-    """Runtime config for one registered hermit."""
-    hermit_id: str
+class AgentConfig:
+    """Runtime config for one registered agent."""
+    agent_id: str
     token: str
     triggers: list[str]
     language: Optional[str]     # None = auto-detect
@@ -24,21 +24,21 @@ class HermitConfig:
 
 class Session:
     """
-    Mutable per-hermit state.  Thread-safe via a simple lock.
+    Mutable per-agent state.  Thread-safe via a simple lock.
 
     Attributes
     ----------
-    config : HermitConfig
-        Immutable hermit configuration.
+    config : AgentConfig
+        Immutable agent configuration.
     connected : bool
-        True when the WebSocket adapter has an open connection for this hermit.
+        True when the WebSocket adapter has an open connection for this agent.
     last_utterance_id : str | None
-        Most-recent utterance dispatched to the hermit.
+        Most-recent utterance dispatched to the agent.
     pending_permission_request_id : str | None
         request_id waiting for a verdict from the operator (at most one at a time).
     """
 
-    def __init__(self, config: HermitConfig) -> None:
+    def __init__(self, config: AgentConfig) -> None:
         self.config = config
         self._lock = threading.Lock()
         self._connected = False
@@ -83,7 +83,7 @@ class Session:
 
     def __repr__(self) -> str:
         return (
-            f"Session(hermit_id={self.config.hermit_id!r}, "
+            f"Session(agent_id={self.config.agent_id!r}, "
             f"connected={self.connected}, "
             f"last_utterance_id={self.last_utterance_id!r})"
         )
@@ -91,31 +91,31 @@ class Session:
 
 class SessionRegistry:
     """
-    Holds all registered Sessions, keyed by hermit_id.
+    Holds all registered Sessions, keyed by agent_id.
 
-    The WebSocket adapter registers sessions when hermits connect.
-    The core looks up sessions by hermit_id.
+    The WebSocket adapter registers sessions when agents connect.
+    The core looks up sessions by agent_id.
     """
 
     def __init__(self) -> None:
         self._lock = threading.Lock()
         self._sessions: dict[str, Session] = {}
 
-    def register(self, config: HermitConfig) -> Session:
-        """Create (or replace) the session for a hermit."""
+    def register(self, config: AgentConfig) -> Session:
+        """Create (or replace) the session for an agent."""
         session = Session(config)
         with self._lock:
-            self._sessions[config.hermit_id] = session
+            self._sessions[config.agent_id] = session
         return session
 
-    def get(self, hermit_id: str) -> Optional[Session]:
+    def get(self, agent_id: str) -> Optional[Session]:
         with self._lock:
-            return self._sessions.get(hermit_id)
+            return self._sessions.get(agent_id)
 
     def all(self) -> list[Session]:
         with self._lock:
             return list(self._sessions.values())
 
-    def remove(self, hermit_id: str) -> None:
+    def remove(self, agent_id: str) -> None:
         with self._lock:
-            self._sessions.pop(hermit_id, None)
+            self._sessions.pop(agent_id, None)

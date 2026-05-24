@@ -10,7 +10,7 @@ Usage::
 
     bus = EventBus()
     bus.subscribe(SpeakRequest, lambda e: tts_queue.put(e))
-    bus.emit(SpeakRequest(hermit_id="jarvis", utterance_id="u-1", text="Hi"))
+    bus.emit(SpeakRequest(agent_id="jarvis", utterance_id="u-1", text="Hi"))
 """
 
 from __future__ import annotations

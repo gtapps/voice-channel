@@ -1,11 +1,11 @@
 ---
 name: voice:configure
-description: Configure the voice channel connection — dispatcher URL, token, hermit ID, and optional permission-relay opt-in.
+description: Configure the voice channel connection — dispatcher URL, token, agent ID, and optional permission-relay opt-in.
 ---
 
 # /voice:configure
 
-Configure the voice channel connection inside this hermit container.
+Configure the voice channel connection inside this agent container.
 
 ## What you do
 
@@ -16,12 +16,12 @@ Ask the user for the following values, then write them to `${CLAUDE_PLUGIN_DATA}
    laptop's LAN IP: `ws://192.168.x.y:7355`.
 
 2. **token** — Bearer token printed by the dispatcher when they ran:
-   `voice-dispatcher config add-hermit <id> --triggers "..." --voice <voice.onnx>`
+   `voice-dispatcher config add-agent <id> --triggers "..." --voice <voice.onnx>`
    (The token is auto-generated and printed — copy it from that output.)
    This token is the only authentication gate — treat it like a password.
 
-3. **hermit_id** — The identifier this hermit uses when connecting (must match what was passed to
-   `add-hermit` on the dispatcher side). Default: `hermit`.
+3. **agent_id** — The identifier this agent uses when connecting (must match what was passed to
+   `add-agent` on the dispatcher side). Default: `agent`.
 
 4. **enable_permission_relay** — Whether to relay Claude's tool-permission prompts through the voice
    channel. **OFF by default.** Before enabling, explain the risk:
@@ -39,7 +39,7 @@ Write to `${CLAUDE_PLUGIN_DATA}/config.json`:
 {
   "dispatcher_url": "ws://laptop.local:7355",
   "token": "<token>",
-  "hermit_id": "<hermit_id>",
+  "agent_id": "<agent_id>",
   "enable_permission_relay": false
 }
 ```
@@ -53,6 +53,6 @@ plugin inside this container — it does NOT modify the dispatcher's YAML on the
 ## Notes
 
 - This skill writes only to `${CLAUDE_PLUGIN_DATA}/config.json` inside this container.
-- To add this hermit to the dispatcher, the user must run on their laptop:
-  `voice-dispatcher config add-hermit <hermit_id> --triggers "hey jarvis,hermit"`
+- To add this agent to the dispatcher, the user must run on their laptop:
+  `voice-dispatcher config add-agent <agent_id> --triggers "hey jarvis,agent"`
 - The dispatcher URL accepts both mDNS hostnames and bare IP addresses.

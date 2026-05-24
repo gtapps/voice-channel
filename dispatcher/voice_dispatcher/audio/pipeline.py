@@ -195,13 +195,13 @@ class AudioPipeline:
         self._whisper_device: str = config.get("whisper", {}).get("device", "cpu")
         self._whisper_compute: str = config.get("whisper", {}).get("compute_type", "int8")
 
-        # Hermits indexed by token for auth; also by hermit_id for routing
-        self._hermits: dict = config.get("hermits", {})
+        # Agents indexed by token for auth; also by agent_id for routing
+        self._agents: dict = config.get("agents", {})
 
         # Half-duplex: set True while TTS is playing
         self._speaking = threading.Event()
 
-        # Permission relay: (hermit_id, request_id) while awaiting a spoken verdict, else None.
+        # Permission relay: (agent_id, request_id) while awaiting a spoken verdict, else None.
         # Set/cleared on the bus-callback thread, read on the audio-worker thread; atomic in CPython.
         self._pending_permission: Optional[tuple[str, str]] = None
         self._pending_permission_deadline: float = 0.0
@@ -229,7 +229,7 @@ class AudioPipeline:
         from ..core.models import SpeakRequest as SpeakRequestEvent  # type: ignore
         from ..core.models import PermissionRequested  # type: ignore
         self._dispatcher.bus.subscribe(SpeakRequestEvent, self._on_speak_request)
-        # PermissionRequested is only emitted by the core when a hermit has
+        # PermissionRequested is only emitted by the core when an agent has
         # enable_permission_relay=True, so subscribing unconditionally is safe.
         self._dispatcher.bus.subscribe(PermissionRequested, self._on_permission_requested)
 
@@ -441,28 +441,28 @@ class AudioPipeline:
                 logger.info("permission verdict window expired — terminal-only fallback")
                 self._pending_permission = None
             else:
-                hermit_id, request_id = self._pending_permission
+                agent_id, request_id = self._pending_permission
                 behavior = parse_verdict(transcript, request_id)
                 if behavior is not None:
-                    logger.info("permission verdict: hermit=%r id=%r behavior=%r",
-                                hermit_id, request_id, behavior)
+                    logger.info("permission verdict: agent=%r id=%r behavior=%r",
+                                agent_id, request_id, behavior)
                     self._pending_permission = None
-                    self._dispatcher.submit_permission_verdict(hermit_id, request_id, behavior)
+                    self._dispatcher.submit_permission_verdict(agent_id, request_id, behavior)
                 else:
                     logger.debug("no valid verdict in %r — still listening", transcript)
                 return  # in priority mode, never fall through to trigger matching
 
-        # Match against all registered hermits
-        for hermit_id, hermit_cfg in self._hermits.items():
-            triggers = hermit_cfg.get("triggers", [])
-            lang_hint = hermit_cfg.get("language") or lang
+        # Match against all registered agents
+        for agent_id, agent_cfg in self._agents.items():
+            triggers = agent_cfg.get("triggers", [])
+            lang_hint = agent_cfg.get("language") or lang
             matched_trigger, command = match_trigger(transcript, triggers)
             if matched_trigger:
                 uid = _generate_utterance_id()
                 ts = datetime.now(timezone.utc).isoformat()
-                logger.info("trigger match: hermit=%r trigger=%r command=%r", hermit_id, matched_trigger, command)
+                logger.info("trigger match: agent=%r trigger=%r command=%r", agent_id, matched_trigger, command)
                 self._dispatcher.route_transcript(
-                    hermit_id=hermit_id,
+                    agent_id=agent_id,
                     utterance_id=uid,
                     text=command,
                     lang=lang_hint,
@@ -479,9 +479,9 @@ class AudioPipeline:
 
     def _on_speak_request(self, event) -> None:
         """Bus callback — enqueue TTS work."""
-        hermit_cfg = self._hermits.get(event.hermit_id, {})
-        voice = hermit_cfg.get("voice", "")
-        self._tts_queue.put((event.hermit_id, event.utterance_id, event.text, voice))
+        agent_cfg = self._agents.get(event.agent_id, {})
+        voice = agent_cfg.get("voice", "")
+        self._tts_queue.put((event.agent_id, event.utterance_id, event.text, voice))
 
     def _on_permission_requested(self, event) -> None:
         """Bus callback — speak the phonetic prompt and open the verdict window."""
@@ -489,22 +489,22 @@ class AudioPipeline:
         # keys off `_pending_permission is not None`, so it must never observe a
         # non-None pending with a stale deadline (which would expire it instantly).
         self._pending_permission_deadline = time.monotonic() + PERMISSION_LISTEN_WINDOW
-        self._pending_permission = (event.hermit_id, event.request_id)
+        self._pending_permission = (event.agent_id, event.request_id)
         prompt = format_permission_prompt(event.tool_name, event.request_id)
-        voice = self._hermits.get(event.hermit_id, {}).get("voice", "")
-        logger.info("permission prompt: hermit=%r id=%r tool=%r",
-                    event.hermit_id, event.request_id, event.tool_name)
-        self._tts_queue.put((event.hermit_id, f"perm-{event.request_id}", prompt, voice))
+        voice = self._agents.get(event.agent_id, {}).get("voice", "")
+        logger.info("permission prompt: agent=%r id=%r tool=%r",
+                    event.agent_id, event.request_id, event.tool_name)
+        self._tts_queue.put((event.agent_id, f"perm-{event.request_id}", prompt, voice))
 
     def _tts_worker(self) -> None:
         while not self._stop_event.is_set():
             try:
-                hermit_id, uid, text, voice_filename = self._tts_queue.get(timeout=0.5)
+                agent_id, uid, text, voice_filename = self._tts_queue.get(timeout=0.5)
             except queue.Empty:
                 continue
-            self._play_tts(hermit_id, uid, text, voice_filename)
+            self._play_tts(agent_id, uid, text, voice_filename)
 
-    def _play_tts(self, hermit_id: str, uid: str, text: str, voice_filename: str) -> None:
+    def _play_tts(self, agent_id: str, uid: str, text: str, voice_filename: str) -> None:
         """Synthesise TTS with Piper and play via the system audio stack (half-duplex)."""
         voice = self._load_piper_voice(voice_filename)
         if voice is None:
@@ -515,7 +515,7 @@ class AudioPipeline:
             import wave
 
             self._speaking.set()
-            logger.info("tts: hermit=%r uid=%r text=%r", hermit_id, uid, text)
+            logger.info("tts: agent=%r uid=%r text=%r", agent_id, uid, text)
 
             buf = io.BytesIO()
             with wave.open(buf, "wb") as wf:

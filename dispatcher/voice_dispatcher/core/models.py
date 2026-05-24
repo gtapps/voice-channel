@@ -16,7 +16,7 @@ from typing import Literal
 @dataclass(frozen=True)
 class TranscriptEvent:
     """A voice utterance matched a trigger and was transcribed."""
-    hermit_id: str
+    agent_id: str
     utterance_id: str   # e.g. "u-1748012345-abc"
     text: str           # trigger-stripped command text
     lang: str           # ISO-639-1 language code (from Whisper or config hint)
@@ -29,7 +29,7 @@ class TranscriptEvent:
 @dataclass(frozen=True)
 class TranscriptDispatched:
     """Emitted by the core after route_transcript() enqueues the utterance."""
-    hermit_id: str
+    agent_id: str
     utterance_id: str
     text: str
     lang: str
@@ -40,7 +40,7 @@ class TranscriptDispatched:
 @dataclass(frozen=True)
 class SpeakRequest:
     """Core asks the audio subsystem to synthesise and play text."""
-    hermit_id: str
+    agent_id: str
     utterance_id: str
     text: str
 
@@ -48,7 +48,7 @@ class SpeakRequest:
 @dataclass(frozen=True)
 class PermissionRequested:
     """Core forwards an inbound permission request from the plugin to adapters."""
-    hermit_id: str
+    agent_id: str
     request_id: str
     tool_name: str
     description: str
@@ -58,7 +58,7 @@ class PermissionRequested:
 @dataclass(frozen=True)
 class PermissionVerdict:
     """Core forwards an operator verdict back to the plugin."""
-    hermit_id: str
+    agent_id: str
     request_id: str
     behavior: Literal["allow", "deny"]
 
@@ -66,13 +66,13 @@ class PermissionVerdict:
 # ── Internal state events ─────────────────────────────────────────────────────
 
 @dataclass(frozen=True)
-class HermitConnected:
-    hermit_id: str
+class AgentConnected:
+    agent_id: str
 
 
 @dataclass(frozen=True)
-class HermitDisconnected:
-    hermit_id: str
+class AgentDisconnected:
+    agent_id: str
     code: int
     reason: str
 
@@ -84,6 +84,6 @@ Event = (
     | SpeakRequest
     | PermissionRequested
     | PermissionVerdict
-    | HermitConnected
-    | HermitDisconnected
+    | AgentConnected
+    | AgentDisconnected
 )

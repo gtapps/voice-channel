@@ -27,8 +27,8 @@ from typing import Optional
 import pytest
 
 from voice_dispatcher.core.handlers import Dispatcher
-from voice_dispatcher.core.models import HermitConnected, SpeakRequest
-from voice_dispatcher.core.session import HermitConfig
+from voice_dispatcher.core.models import AgentConnected, SpeakRequest
+from voice_dispatcher.core.session import AgentConfig
 from voice_dispatcher.adapters.websocket import WebSocketAdapter
 
 PLUGIN_ROOT = Path(__file__).parent.parent.parent / "plugin" / "voice"
@@ -80,11 +80,11 @@ class IntegrationHarness:
         self.port = port
         self.data_dir = data_dir
         self.token = "integration-test-token"
-        self.hermit_id = "test-hermit"
+        self.agent_id = "test-agent"
 
         self.dispatcher = Dispatcher()
-        hc = HermitConfig(
-            hermit_id=self.hermit_id,
+        hc = AgentConfig(
+            agent_id=self.agent_id,
             token=self.token,
             triggers=["hey jarvis"],
             language="en",
@@ -94,8 +94,8 @@ class IntegrationHarness:
         self.dispatcher.registry.register(hc)
 
         cfg = {
-            "hermits": {
-                self.hermit_id: {
+            "agents": {
+                self.agent_id: {
                     "websocket_token": self.token,
                     "triggers": ["hey jarvis"],
                     "voice": "",
@@ -109,7 +109,7 @@ class IntegrationHarness:
         # Events for synchronisation
         self._connected_event = threading.Event()
         self._speak_requests: list[SpeakRequest] = []
-        self.dispatcher.bus.subscribe(HermitConnected, lambda e: self._connected_event.set())
+        self.dispatcher.bus.subscribe(AgentConnected, lambda e: self._connected_event.set())
         self.dispatcher.bus.subscribe(SpeakRequest, self._speak_requests.append)
 
         # Asyncio loop running in a daemon thread
@@ -134,7 +134,7 @@ class IntegrationHarness:
         plugin_cfg = {
             "dispatcher_url": f"ws://127.0.0.1:{self.port}",
             "token": self.token,
-            "hermit_id": self.hermit_id,
+            "agent_id": self.agent_id,
             "enable_permission_relay": False,
         }
         with open(os.path.join(self.data_dir, "config.json"), "w") as f:
@@ -254,7 +254,7 @@ def test_route_transcript_reaches_plugin(harness: IntegrationHarness) -> None:
     plugin receives notifications/claude/channel with the correct params.
     """
     harness.dispatcher.route_transcript(
-        hermit_id=harness.hermit_id,
+        agent_id=harness.agent_id,
         utterance_id="u-int-001",
         text="turn on the lights",
         lang="en",
@@ -277,7 +277,7 @@ def test_reply_tool_reaches_core(harness: IntegrationHarness) -> None:
     """
     # First send a transcript so there's an utterance to reply to
     harness.dispatcher.route_transcript(
-        hermit_id=harness.hermit_id,
+        agent_id=harness.agent_id,
         utterance_id="u-int-002",
         text="what time is it",
         lang="en",
@@ -303,6 +303,6 @@ def test_reply_tool_reaches_core(harness: IntegrationHarness) -> None:
 
     assert harness._speak_requests, "dispatcher never received SpeakRequest"
     sr = harness._speak_requests[0]
-    assert sr.hermit_id == harness.hermit_id
+    assert sr.agent_id == harness.agent_id
     assert sr.utterance_id == "u-int-002"
     assert sr.text == "It is noon."

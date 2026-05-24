@@ -1,6 +1,6 @@
 # Voice channel WebSocket protocol — v1
 
-Single WebSocket per hermit, JSON messages, explicitly versioned.
+Single WebSocket per agent, JSON messages, explicitly versioned.
 
 **Connection URL:** `ws://laptop.local:7355/` (mDNS) or `ws://192.168.x.y:7355/` (LAN IP fallback).
 **No query string.** The token is sent only in the `hello` message.
@@ -9,10 +9,10 @@ Single WebSocket per hermit, JSON messages, explicitly versioned.
 
 ## Handshake
 
-Immediately after connecting, the hermit sends:
+Immediately after connecting, the agent sends:
 
 ```json
-{ "v": 1, "type": "hello", "hermit_id": "jarvis", "token": "..." }
+{ "v": 1, "type": "hello", "agent_id": "jarvis", "token": "..." }
 ```
 
 - `v` — protocol version. The dispatcher closes the socket with a clear reason on version mismatch.
@@ -20,7 +20,7 @@ Immediately after connecting, the hermit sends:
 
 ---
 
-## Dispatcher → Hermit: transcript
+## Dispatcher → Agent: transcript
 
 Sent when a trigger fires and STT completes:
 
@@ -37,7 +37,7 @@ Sent when a trigger fires and STT completes:
 
 ---
 
-## Hermit → Dispatcher: speak
+## Agent → Dispatcher: speak
 
 Sent when Claude calls the `reply` tool:
 
@@ -50,7 +50,7 @@ can gate half-duplex correctly when transcripts queue.
 
 ---
 
-## Dispatcher → Hermit: spoke
+## Dispatcher → Agent: spoke
 
 Sent when TTS playback of a `speak` frame has finished:
 
@@ -62,10 +62,10 @@ Sent when TTS playback of a `speak` frame has finished:
 
 ## Permission relay (opt-in)
 
-Only sent when the hermit declared `claude/channel/permission` in its MCP capabilities
+Only sent when the agent declared `claude/channel/permission` in its MCP capabilities
 (`enable_permission_relay: true` in the plugin config).
 
-### Hermit → Dispatcher: permission_request
+### Agent → Dispatcher: permission_request
 
 ```json
 {
@@ -79,7 +79,7 @@ Only sent when the hermit declared `claude/channel/permission` in its MCP capabi
 
 Field name is `tool_name` (not `tool`) — matches the channels-reference docs verbatim.
 
-### Dispatcher → Hermit: permission_verdict
+### Dispatcher → Agent: permission_verdict
 
 ```json
 { "type": "permission_verdict", "request_id": "abcde", "behavior": "allow" }

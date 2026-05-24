@@ -77,7 +77,7 @@ async function setup(opts: { enablePermissionRelay?: boolean } = {}): Promise<Se
     JSON.stringify({
       dispatcher_url: `ws://127.0.0.1:${port}`,
       token: 'test-token',
-      hermit_id: 'test-hermit',
+      agent_id: 'test-agent',
       enable_permission_relay: opts.enablePermissionRelay ?? false,
     }),
   )

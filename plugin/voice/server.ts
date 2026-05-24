@@ -3,7 +3,7 @@
  * Voice channel plugin — MCP ↔ WebSocket bridge.
  *
  * Dispatcher runs on the operator's laptop (LAN-reachable); this process
- * runs inside a hermit Docker container. The two communicate over a single
+ * runs inside an agent Docker container. The two communicate over a single
  * long-lived WebSocket. Audio never enters this process.
  */
 
@@ -27,7 +27,7 @@ const STATUS_FILE = join(DATA_DIR, 'status.json')
 const ConfigSchema = z.object({
   dispatcher_url: z.string().min(1),
   token: z.string().min(1),
-  hermit_id: z.string().min(1).default('hermit'),
+  agent_id: z.string().min(1).default('agent'),
   enable_permission_relay: z.boolean().default(false),
 })
 type Config = z.infer<typeof ConfigSchema>
@@ -154,7 +154,7 @@ function connect(): void {
   ws.on('open', () => {
     reconnectAttempt = 0
     writeStatus({ state: 'connected', dispatcher_url: cfg.dispatcher_url })
-    ws.send(JSON.stringify({ v: 1, type: 'hello', hermit_id: cfg.hermit_id, token: cfg.token }))
+    ws.send(JSON.stringify({ v: 1, type: 'hello', agent_id: cfg.agent_id, token: cfg.token }))
 
     if (pingTimer) clearInterval(pingTimer)
     pingTimer = setInterval(() => {

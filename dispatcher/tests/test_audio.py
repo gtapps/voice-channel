@@ -45,7 +45,7 @@ def test_levenshtein_empty() -> None:
 def test_exact_trigger_match() -> None:
     trigger, command = match_trigger(
         "hey jarvis turn on the lights",
-        ["hey jarvis", "hermit"],
+        ["hey jarvis", "agent"],
     )
     assert trigger == "hey jarvis"
     assert command == "turn on the lights"
@@ -62,19 +62,19 @@ def test_fuzzy_trigger_match_one_edit() -> None:
 
 
 def test_fuzzy_trigger_match_accent() -> None:
-    # Portuguese-accented "ó hermit" — triggers with "o hermit" (1 edit)
+    # Portuguese-accented "ó agent" — triggers with "o agent" (1 edit)
     trigger, command = match_trigger(
-        "o hermit whats up",
-        ["ó hermit"],
+        "o agent whats up",
+        ["ó agent"],
     )
-    assert trigger == "ó hermit"
+    assert trigger == "ó agent"
     assert command == "whats up"
 
 
 def test_no_trigger_match() -> None:
     trigger, command = match_trigger(
         "the weather looks nice today",
-        ["hey jarvis", "hermit", "ó hermit"],
+        ["hey jarvis", "agent", "ó agent"],
     )
     assert trigger is None
     assert command == ""
@@ -90,12 +90,12 @@ def test_trigger_only_no_command() -> None:
 
 
 def test_first_trigger_wins() -> None:
-    # "hermit" is a prefix of "hermit pro" — first matching trigger should win
+    # "agent" is a prefix of "agent pro" — first matching trigger should win
     trigger, command = match_trigger(
-        "hermit list files",
-        ["hermit", "hermit pro"],
+        "agent list files",
+        ["agent", "agent pro"],
     )
-    assert trigger == "hermit"
+    assert trigger == "agent"
     assert command == "list files"
 
 
@@ -195,18 +195,18 @@ def test_parse_verdict_juliett_alt_spelling() -> None:
 
 def _make_pipeline(enable_relay: bool = True):
     from voice_dispatcher.core.handlers import Dispatcher
-    from voice_dispatcher.core.session import HermitConfig, SessionRegistry
+    from voice_dispatcher.core.session import AgentConfig, SessionRegistry
     from voice_dispatcher.audio.pipeline import AudioPipeline
 
     registry = SessionRegistry()
-    registry.register(HermitConfig(
-        hermit_id="jarvis", token="tok", triggers=["hey jarvis"],
+    registry.register(AgentConfig(
+        agent_id="jarvis", token="tok", triggers=["hey jarvis"],
         language="en", voice="en_US-lessac-medium.onnx",
         enable_permission_relay=enable_relay,
     ))
     d = Dispatcher(registry=registry)
     config = {
-        "hermits": {"jarvis": {"triggers": ["hey jarvis"],
+        "agents": {"jarvis": {"triggers": ["hey jarvis"],
                                "voice": "en_US-lessac-medium.onnx",
                                "websocket_token": "tok"}},
         "audio": {"input_device": None, "output_device": None},
@@ -242,8 +242,8 @@ def test_on_permission_requested_sets_pending_and_enqueues_prompt() -> None:
         PermissionRequested("jarvis", "abcde", "Bash", "run pwd", "{}")
     )
     assert pipeline._pending_permission == ("jarvis", "abcde")
-    hermit_id, uid, text, voice = pipeline._tts_queue.get_nowait()
-    assert hermit_id == "jarvis"
+    agent_id, uid, text, voice = pipeline._tts_queue.get_nowait()
+    assert agent_id == "jarvis"
     assert "alpha, bravo, charlie, delta, echo" in text
 
 

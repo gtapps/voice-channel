@@ -2,7 +2,7 @@
 CLI — `voice-dispatcher config` subcommands.
 
 Usage:
-    voice-dispatcher config add-hermit <id> --triggers "..." --voice <voice.onnx>
+    voice-dispatcher config add-agent <id> --triggers "..." --voice <voice.onnx>
     voice-dispatcher config list
     voice-dispatcher config rotate-token <id>
     voice-dispatcher list-devices
@@ -50,76 +50,76 @@ def cli() -> None:
 
 @cli.group()
 def config() -> None:
-    """Manage hermit configuration."""
+    """Manage agent configuration."""
 
 
-@config.command("add-hermit")
-@click.argument("hermit_id")
+@config.command("add-agent")
+@click.argument("agent_id")
 @click.option("--triggers", required=True,
-              help='Comma-separated trigger phrases, e.g. "hey jarvis,hermit"')
+              help='Comma-separated trigger phrases, e.g. "hey jarvis,agent"')
 @click.option("--voice", required=True,
               help="Piper .onnx voice filename, e.g. en_US-lessac-medium.onnx")
 @click.option("--language", default=None, help="Language hint (ISO-639-1), e.g. en")
 @click.option("--token", default=None, help="Override token (default: auto-generated)")
-def add_hermit(hermit_id: str, triggers: str, voice: str,
+def add_agent(agent_id: str, triggers: str, voice: str,
                language: Optional[str], token: Optional[str]) -> None:
-    """Register a new hermit. Prints the token to paste into /voice:configure."""
+    """Register a new agent. Prints the token to paste into /voice:configure."""
     cfg = _load_config()
-    hermits = cfg.setdefault("hermits", {})
+    agents = cfg.setdefault("agents", {})
 
-    if hermit_id in hermits:
-        click.echo(f"Warning: overwriting existing hermit {hermit_id!r}", err=True)
+    if agent_id in agents:
+        click.echo(f"Warning: overwriting existing agent {agent_id!r}", err=True)
 
     tok = token or _generate_token()
     trigger_list = [t.strip() for t in triggers.split(",") if t.strip()]
 
-    hermits[hermit_id] = {
+    agents[agent_id] = {
         "triggers": trigger_list,
         "voice": voice,
         "websocket_token": tok,
     }
     if language:
-        hermits[hermit_id]["language"] = language
+        agents[agent_id]["language"] = language
 
     _save_config(cfg)
 
-    click.echo(f"\n✓ Hermit {hermit_id!r} registered.")
+    click.echo(f"\n✓ Agent {agent_id!r} registered.")
     click.echo(f"  Token: {tok}")
-    click.echo(f"\nNow inside that hermit's container, run:")
+    click.echo(f"\nNow inside that agent's container, run:")
     click.echo(f"  /voice:configure")
     click.echo(f"  (use dispatcher URL and the token above)\n")
 
 
 @config.command("list")
-def list_hermits() -> None:
-    """List registered hermits."""
+def list_agents() -> None:
+    """List registered agents."""
     cfg = _load_config()
-    hermits = cfg.get("hermits", {})
-    if not hermits:
-        click.echo("No hermits registered.")
+    agents = cfg.get("agents", {})
+    if not agents:
+        click.echo("No agents registered.")
         return
-    for hid, hcfg in hermits.items():
+    for hid, hcfg in agents.items():
         triggers = ", ".join(hcfg.get("triggers", []))
         voice = hcfg.get("voice", "(none)")
         click.echo(f"  {hid}  triggers=[{triggers}]  voice={voice}")
 
 
 @config.command("rotate-token")
-@click.argument("hermit_id")
-def rotate_token(hermit_id: str) -> None:
-    """Generate a new token for a hermit (invalidates the old one)."""
+@click.argument("agent_id")
+def rotate_token(agent_id: str) -> None:
+    """Generate a new token for an agent (invalidates the old one)."""
     cfg = _load_config()
-    hermits = cfg.get("hermits", {})
-    if hermit_id not in hermits:
-        click.echo(f"Error: hermit {hermit_id!r} not found.", err=True)
+    agents = cfg.get("agents", {})
+    if agent_id not in agents:
+        click.echo(f"Error: agent {agent_id!r} not found.", err=True)
         sys.exit(1)
 
     tok = _generate_token()
-    hermits[hermit_id]["websocket_token"] = tok
+    agents[agent_id]["websocket_token"] = tok
     _save_config(cfg)
 
-    click.echo(f"✓ New token for {hermit_id!r}: {tok}")
-    click.echo(f"Re-run /voice:configure inside that hermit's container with the new token.")
+    click.echo(f"✓ New token for {agent_id!r}: {tok}")
+    click.echo(f"Re-run /voice:configure inside that agent's container with the new token.")
 
 
 @cli.command("list-devices")
