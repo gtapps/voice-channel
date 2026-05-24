@@ -8,13 +8,14 @@ Speak to your hermits from anywhere in the room.
 Two components, one protocol:
 
 ```
-LAPTOP (macOS — operator's device, has AirPods / built-in mic)
+LAPTOP (macOS or Linux — operator's device, has AirPods / built-in mic)
   voice-dispatcher (Python)
     ├── Silero VAD + faster-whisper-tiny  — local STT, no cloud
     ├── Piper TTS                          — local TTS, no cloud
-    └── WebSocket server :7355 (LAN)
+    └── WebSocket server :7355 (LAN / 0.0.0.0)
 
           ↕  ws://laptop.local:7355  (home LAN)
+             or ws://<docker-bridge-gateway>:7355  (same host)
 
 HERMIT PC (Linux + Docker)
   hermit container
@@ -47,38 +48,95 @@ The command prints the token. Copy it.
 
 ### 3. Install the plugin in the hermit container
 
-Inside the Claude Code session running in that container:
+Run these commands **inside the container** (e.g. via `docker exec -it <container> bash`):
 
+```bash
+claude plugin marketplace add gtapps/voice-channel
+claude plugin install voice@voice-channel --scope local
 ```
-/plugin install voice-channel
-/voice:configure
+
+### 4. Configure the plugin
+
+Find the Docker bridge gateway IP (how the container reaches the host):
+
+```bash
+# Inside the container:
+python3 -c "
+import struct, socket
+with open('/proc/net/route') as f:
+    for line in f:
+        parts = line.split()
+        if parts[1] == '00000000':
+            print(socket.inet_ntoa(struct.pack('<I', int(parts[2], 16))))
+            break
+"
 ```
 
-Enter the dispatcher URL (`ws://laptop.local:7355` or a LAN IP), the token from step 2,
-and the hermit ID (`jarvis`).
+Then write the config (replace values as needed):
 
-### 4. Test
+```bash
+# Inside the container — adjust DATA_DIR to match your plugin scope:
+DATA_DIR="$HOME/.claude/plugins/data/voice-voice-channel"
+mkdir -p "$DATA_DIR"
+cat > "$DATA_DIR/config.json" <<EOF
+{
+  "dispatcher_url": "ws://<bridge-ip>:7355",
+  "token": "<token from step 2>",
+  "hermit_id": "jarvis",
+  "enable_permission_relay": false
+}
+EOF
+```
+
+Or run `/voice:configure` inside a Claude Code session — it will prompt for each value.
+
+> **Note on `CLAUDE_PLUGIN_DATA`:** Claude Code sets this to
+> `~/.claude/plugins/data/voice-voice-channel/` (without a trailing plugin-name subdir).
+> `config.json` and `status.json` must live directly in that directory.
+
+### 5. Start a Claude Code session with the voice channel
+
+```bash
+# Inside the container:
+cd /path/to/your/project
+claude --dangerously-load-development-channels plugin:voice@voice-channel
+```
+
+> This flag is required for community (non-Anthropic-signed) channel plugins.
+> The dispatcher must be running on your laptop before Claude starts.
+
+### 6. Test
 
 Say "hey jarvis, what time is it?" — Claude should reply aloud.
+
+## Dispatcher URL — same host vs separate LAN host
+
+| Setup | URL to use |
+|---|---|
+| Dispatcher and hermit on the **same machine** (hermit in Docker) | `ws://<bridge-gateway>:7355` — find with the Python snippet above; typically `172.17.0.1` or `172.18.0.1` |
+| Dispatcher on a **separate LAN laptop** (typical setup) | `ws://laptop.local:7355` (mDNS) or `ws://192.168.x.y:7355` (static IP) |
+
+The dispatcher binds `0.0.0.0:7355` by default so both cases work without config changes.
 
 ## Troubleshooting
 
 | Symptom | Check |
 |---|---|
-| No response to voice | Check the dispatcher is running — macOS: `launchctl list \| grep voice-dispatcher`; Linux: `systemctl --user status voice-dispatcher`. Check mic permission (macOS: System Settings → Privacy → Microphone). |
-| Plugin shows "disconnected" | `/voice:status` in hermit; verify `dispatcher_url` in config and that `laptop.local` resolves (`ping laptop.local`) |
-| mDNS not resolving | Use the laptop's LAN IP instead: `ws://192.168.x.y:7355` |
-| AirPods mic has poor accuracy | Expected — AirPods switch to Bluetooth HFP/SCO when used as a mic. Use the built-in mic for input (see dispatcher/README.md → "AirPods / Bluetooth headset note"). |
-| No TTS heard on Linux | The headset is likely in HFP mode (silent output). Pin it to A2DP and use the built-in mic — see dispatcher/README.md. Ensure `pw-play` is installed (`pipewire-bin`). |
+| `-32000` on plugin start | Dispatcher not running, or `config.json` missing/in wrong path. Run `/voice:status` to check. Config must be at `~/.claude/plugins/data/voice-voice-channel/config.json` (not in a `voice/` subdir). |
+| Plugin shows "disconnected" (close code 1006) | Nothing listening at the dispatcher URL. Check dispatcher is running (`lsof -i :7355` on host) and bound to `0.0.0.0`, not `127.0.0.1`. |
+| No response to voice | Dispatcher running but mic not triggering. macOS: check mic permission (System Settings → Privacy → Microphone). Linux: check `systemctl --user status voice-dispatcher` and mic levels. |
+| mDNS not resolving | Use the laptop's LAN IP instead: `ws://192.168.x.y:7355`. Some mesh-router firmware suppresses mDNS. |
+| AirPods mic has poor accuracy | AirPods switch to Bluetooth HFP/SCO when used as a mic. Use the built-in mic for input — see dispatcher/README.md → "AirPods / Bluetooth headset note". |
+| No TTS heard on Linux | Headset likely in HFP mode (silent output). Pin it to A2DP and use the built-in mic — see dispatcher/README.md. Ensure `pw-play` is installed (`pipewire-bin`). |
 | Dispatcher says "token mismatch" | Re-run `/voice:configure` with the correct token, or rotate: `voice-dispatcher config rotate-token jarvis` |
 
 ## Adding more hermits
 
 Each additional hermit needs three steps (not a one-YAML-line operation):
 
-1. `voice-dispatcher config add-hermit <id> --triggers "..." --voice <voice.onnx>`
-2. `/plugin install voice-channel` inside that hermit's container
-3. `/voice:configure` with the matching dispatcher URL + token
+1. `voice-dispatcher config add-hermit <id> --triggers "..." --voice <voice.onnx>` on the laptop
+2. `claude plugin install voice@voice-channel --scope local` inside that hermit's container
+3. Write `config.json` with the matching dispatcher URL + token (or run `/voice:configure`)
 
 ## Security
 
