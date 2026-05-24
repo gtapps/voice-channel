@@ -65,10 +65,11 @@ Say "hey jarvis, what time is it?" — Claude should reply aloud.
 
 | Symptom | Check |
 |---|---|
-| No response to voice | `voice-dispatcher status` on the laptop; check mic permission (macOS: System Settings → Privacy → Microphone) |
+| No response to voice | Check the dispatcher is running — macOS: `launchctl list \| grep voice-dispatcher`; Linux: `systemctl --user status voice-dispatcher`. Check mic permission (macOS: System Settings → Privacy → Microphone). |
 | Plugin shows "disconnected" | `/voice:status` in hermit; verify `dispatcher_url` in config and that `laptop.local` resolves (`ping laptop.local`) |
 | mDNS not resolving | Use the laptop's LAN IP instead: `ws://192.168.x.y:7355` |
-| AirPods mic has poor accuracy | Expected — AirPods switch to Bluetooth SCO when mic is active. Use the laptop's built-in mic for input in `config.yaml.example` |
+| AirPods mic has poor accuracy | Expected — AirPods switch to Bluetooth HFP/SCO when used as a mic. Use the built-in mic for input (see dispatcher/README.md → "AirPods / Bluetooth headset note"). |
+| No TTS heard on Linux | The headset is likely in HFP mode (silent output). Pin it to A2DP and use the built-in mic — see dispatcher/README.md. Ensure `pw-play` is installed (`pipewire-bin`). |
 | Dispatcher says "token mismatch" | Re-run `/voice:configure` with the correct token, or rotate: `voice-dispatcher config rotate-token jarvis` |
 
 ## Adding more hermits
@@ -87,6 +88,16 @@ Trust model: **home LAN is trusted** (WPA2/WPA3 WiFi, no port-forwarding, single
 Upgrade paths (not v1, see [PROTOCOL.md](PROTOCOL.md)):
 - WSS with self-signed cert + fingerprint pinning
 - Tailscale/WireGuard tunnel between laptop and hermit PC
+
+### Permission relay (opt-in, OFF by default)
+
+The voice channel can relay Claude's tool-permission prompts: the dispatcher
+speaks *"Bash needs permission, say yes or no followed by alpha bravo…"* and you
+answer by voice. The 5-letter request id must be spoken, so a bare "yes" from a TV
+won't approve anything. Still, **the mic does not authenticate the speaker** —
+enable it (`enable_permission_relay` in both config.yaml and `/voice:configure`)
+only if you accept that anyone the mic can hear could approve a tool call. The
+local terminal dialog is always the fallback. See dispatcher/README.md for details.
 
 ## Privacy
 

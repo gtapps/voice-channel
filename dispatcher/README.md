@@ -101,14 +101,48 @@ voice-dispatcher config rotate-token <id>       # generate a new token
 voice-dispatcher list-devices                   # list audio devices
 ```
 
-## AirPods note
+## AirPods / Bluetooth headset note
 
-When AirPods activate as a microphone, Bluetooth switches to the SCO codec  
-(mono, 8–16 kHz), which significantly degrades Whisper-tiny accuracy.
+When a Bluetooth headset activates as a **microphone**, it switches to the HFP/SCO
+codec (mono, 8–16 kHz). This both degrades Whisper-tiny accuracy *and* makes the
+headset's audio **output** unreliable (HFP output on Linux is flaky/silent).
 
-**Recommended:** use the laptop's **built-in mic for input**, AirPods for output only.  
-Set `audio.input_device` to `null` (system default built-in) and  
-`audio.output_device` to the AirPods index (`voice-dispatcher list-devices`).
+**Recommended on both platforms:** built-in mic for **input**, headset for **output only**.
+
+**macOS:** set `audio.input_device` to `null` (built-in) and `audio.output_device`
+to the AirPods index from `voice-dispatcher list-devices`.
+
+**Linux (PipeWire):** leave both devices `null` and pin routing with `pactl` so the
+headset stays in high-fidelity A2DP (output-only):
+```bash
+# Use the built-in mic for input so the headset isn't pulled into HFP:
+pactl set-default-source alsa_input.<builtin>      # see: pactl list sources short
+# Keep the headset in A2DP (high-quality output):
+pactl set-card-profile bluez_card.<addr> a2dp-sink # see: pactl list cards short
+```
+The dispatcher plays TTS via `pw-play`, which follows the PipeWire default sink, so
+`output_device: null` routes correctly to the headset. If the built-in mic clips on
+ambient noise, lower its gain: `pactl set-source-volume <source> 20%`.
+
+> These `pactl` settings reset on reboot. Re-run them (or add to a login script)
+> for persistence — a future version may apply them automatically.
+
+## Permission relay (opt-in, OFF by default)
+
+When `enable_permission_relay: true` for a hermit (config.yaml) **and** the plugin
+is configured with it on (`/voice:configure`), the dispatcher relays Claude's
+tool-permission prompts through voice:
+
+1. Claude requests permission (e.g. to run `Bash`).
+2. The dispatcher speaks: *"Bash needs permission. Say yes or no, followed by alpha bravo charlie delta echo."*
+3. You reply *"yes alpha bravo charlie delta echo"* (or *"no …"*). The 5-letter
+   request id **must** be spoken — a bare "yes" is ignored so ambient speech can't
+   approve a tool call. You may speak the id phonetically or as plain letters.
+4. The verdict goes back to Claude. The local terminal dialog is always available
+   as a fallback; the voice window times out after 30 s.
+
+**Security:** the mic does not authenticate the speaker. Only enable this if you
+accept that anyone the mic can hear (a TV, a housemate) could approve a tool call.
 
 ## Laptop sleep
 

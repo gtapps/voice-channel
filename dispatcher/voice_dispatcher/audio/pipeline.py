@@ -82,6 +82,70 @@ def match_trigger(
     return None, ""
 
 
+# ── Permission relay (opt-in): phonetic prompt + spoken-verdict grammar ────────
+
+PERMISSION_LISTEN_WINDOW = 30.0   # seconds to listen for a spoken verdict
+
+# NATO phonetic alphabet for spelling the 5-letter request_id aloud.
+# Claude Code's ID alphabet is [a-km-z] (excludes 'l'), so 'lima' never appears.
+_NATO = {
+    "a": "alpha", "b": "bravo", "c": "charlie", "d": "delta", "e": "echo",
+    "f": "foxtrot", "g": "golf", "h": "hotel", "i": "india", "j": "juliet",
+    "k": "kilo", "m": "mike", "n": "november", "o": "oscar", "p": "papa",
+    "q": "quebec", "r": "romeo", "s": "sierra", "t": "tango", "u": "uniform",
+    "v": "victor", "w": "whiskey", "x": "xray", "y": "yankee", "z": "zulu",
+}
+_NATO_REVERSE = {word: letter for letter, word in _NATO.items()}
+_NATO_REVERSE["juliett"] = "j"   # common alternate spelling Whisper may emit
+
+_YES_WORDS = {"yes", "y", "yeah", "yep", "s", "sim"}    # English + Portuguese
+_NO_WORDS = {"no", "n", "nope", "nao", "não"}
+
+
+def phonetic_spell(request_id: str) -> str:
+    """'abcde' → 'alpha, bravo, charlie, delta, echo'."""
+    return ", ".join(_NATO.get(c, c) for c in request_id)
+
+
+def format_permission_prompt(tool_name: str, request_id: str) -> str:
+    """Build the spoken prompt for an inbound permission request."""
+    return (
+        f"{tool_name} needs permission. "
+        f"Say yes or no, followed by {phonetic_spell(request_id)}."
+    )
+
+
+def parse_verdict(transcript: str, expected_id: str) -> Optional[str]:
+    """
+    Parse a spoken verdict against the expected request_id.
+
+    Returns 'allow', 'deny', or None (no confident match). The operator must
+    speak the 5-letter id (phonetically — 'alpha bravo…' — or as letters) so
+    that ambient speech ('yes' from a TV) cannot approve a tool call.
+    """
+    tokens = re.sub(r"[^\w\s]", " ", transcript.lower()).split()
+    if len(tokens) < 2:
+        return None
+
+    head, rest = tokens[0], tokens[1:]
+    if head in _YES_WORDS:
+        behavior = "allow"
+    elif head in _NO_WORDS:
+        behavior = "deny"
+    else:
+        return None
+
+    letters = []
+    for tok in rest:
+        if tok in _NATO_REVERSE:
+            letters.append(_NATO_REVERSE[tok])
+        elif len(tok) == 1 and tok.isalpha():
+            letters.append(tok)
+        else:
+            return None   # unrecognised token — reject rather than guess
+    return behavior if "".join(letters) == expected_id else None
+
+
 # ── No-match tick ─────────────────────────────────────────────────────────────
 
 def _play_tick(output_device: Optional[int] = None) -> None:
@@ -137,6 +201,12 @@ class AudioPipeline:
         # Half-duplex: set True while TTS is playing
         self._speaking = threading.Event()
 
+        # Permission relay: (hermit_id, request_id) while awaiting a spoken
+        # verdict, else None.  Set/cleared from the bus-callback thread and read
+        # from the audio-worker thread; both ops are atomic assignments.
+        self._pending_permission: Optional[tuple[str, str]] = None
+        self._pending_permission_deadline: float = 0.0
+
         # TTS work queue
         self._tts_queue: queue.Queue = queue.Queue()
 
@@ -158,7 +228,11 @@ class AudioPipeline:
 
         # Subscribe to SpeakRequest events from the core
         from ..core.models import SpeakRequest as SpeakRequestEvent  # type: ignore
+        from ..core.models import PermissionRequested  # type: ignore
         self._dispatcher.bus.subscribe(SpeakRequestEvent, self._on_speak_request)
+        # PermissionRequested is only emitted by the core when a hermit has
+        # enable_permission_relay=True, so subscribing unconditionally is safe.
+        self._dispatcher.bus.subscribe(PermissionRequested, self._on_permission_requested)
 
         # TTS thread
         t_tts = threading.Thread(target=self._tts_worker, name="tts-worker", daemon=True)
@@ -363,6 +437,25 @@ class AudioPipeline:
         if not transcript:
             return
 
+        # Permission-relay priority mode: while awaiting a spoken verdict, parse
+        # this utterance as a verdict instead of matching triggers.  The local
+        # terminal dialog remains the always-available fallback.
+        if self._pending_permission is not None:
+            if time.monotonic() > self._pending_permission_deadline:
+                logger.info("permission verdict window expired — terminal-only fallback")
+                self._pending_permission = None
+            else:
+                hermit_id, request_id = self._pending_permission
+                behavior = parse_verdict(transcript, request_id)
+                if behavior is not None:
+                    logger.info("permission verdict: hermit=%r id=%r behavior=%r",
+                                hermit_id, request_id, behavior)
+                    self._pending_permission = None
+                    self._dispatcher.submit_permission_verdict(hermit_id, request_id, behavior)
+                else:
+                    logger.debug("no valid verdict in %r — still listening", transcript)
+                return  # in priority mode, never fall through to trigger matching
+
         # Match against all registered hermits
         for hermit_id, hermit_cfg in self._hermits.items():
             triggers = hermit_cfg.get("triggers", [])
@@ -393,6 +486,16 @@ class AudioPipeline:
         hermit_cfg = self._hermits.get(event.hermit_id, {})
         voice = hermit_cfg.get("voice", "")
         self._tts_queue.put((event.hermit_id, event.utterance_id, event.text, voice))
+
+    def _on_permission_requested(self, event) -> None:
+        """Bus callback — speak the phonetic prompt and open the verdict window."""
+        self._pending_permission = (event.hermit_id, event.request_id)
+        self._pending_permission_deadline = time.monotonic() + PERMISSION_LISTEN_WINDOW
+        prompt = format_permission_prompt(event.tool_name, event.request_id)
+        voice = self._hermits.get(event.hermit_id, {}).get("voice", "")
+        logger.info("permission prompt: hermit=%r id=%r tool=%r",
+                    event.hermit_id, event.request_id, event.tool_name)
+        self._tts_queue.put((event.hermit_id, f"perm-{event.request_id}", prompt, voice))
 
     def _tts_worker(self) -> None:
         while not self._stop_event.is_set():

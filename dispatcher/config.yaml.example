@@ -51,6 +51,14 @@ hermits:
     language: en            # hint passed to Whisper; null = auto-detect
     voice: en_US-lessac-medium.onnx
     websocket_token: "REPLACE_WITH_TOKEN"
+    # Relay Claude's tool-permission prompts through the voice channel.
+    # OFF by default.  When true, the dispatcher TTSes a phonetic prompt
+    # ("Bash needs permission. Say yes or no, followed by alpha bravo...") and
+    # listens for a spoken verdict that must include the 5-letter request id.
+    # SECURITY: the mic does not authenticate the speaker — a TV or housemate
+    # could approve a tool call.  The local terminal dialog is always the
+    # fallback.  Must ALSO be enabled plugin-side via /voice:configure.
+    enable_permission_relay: false
 
   # Additional hermits — uncomment and fill in:
   # casa:

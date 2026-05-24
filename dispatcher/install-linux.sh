@@ -11,11 +11,16 @@ SERVICE_DST="$HOME/.config/systemd/user/voice-dispatcher.service"
 echo "==> voice-dispatcher Linux install"
 
 # System deps
+# pipewire-bin provides pw-play, which the dispatcher uses for TTS output so
+# audio follows the PipeWire default sink (e.g. AirPods in A2DP) instead of the
+# raw ALSA hw device. Usually already present on desktop Ubuntu; harmless if so.
 echo "--> installing system packages"
+sudo apt-get update
 sudo apt-get install -y --no-install-recommends \
   portaudio19-dev \
   python3-venv \
   python3-dev \
+  pipewire-bin \
   avahi-daemon \
   avahi-utils
 
@@ -51,3 +56,14 @@ echo "✓ voice-dispatcher installed."
 echo ""
 echo "Status:  systemctl --user status voice-dispatcher"
 echo "Logs:    journalctl --user -u voice-dispatcher -f"
+echo ""
+echo "AUDIO ROUTING (Bluetooth headsets, e.g. AirPods):"
+echo "  Using a Bluetooth headset as the MIC forces it into HFP mode (mono"
+echo "  16 kHz), which both degrades Whisper accuracy and makes output flaky."
+echo "  Use the built-in mic for input and the headset for output only:"
+echo "    pactl set-default-source alsa_input.<your-builtin-mic>"
+echo "    pactl set-card-profile bluez_card.<addr> a2dp-sink"
+echo "  Find names with:  pactl list sources short  /  pactl list cards short"
+echo ""
+echo "  If the mic clips on ambient noise (peaks at 1.0), lower its gain:"
+echo "    pactl set-source-volume <source> 20%"
