@@ -519,7 +519,7 @@ class AudioPipeline:
 
             buf = io.BytesIO()
             with wave.open(buf, "wb") as wf:
-                # piper-tts >=1.3 renamed the wave-writing method to
+                # piper-tts >=1.4 renamed the wave-writing method to
                 # synthesize_wav(); plain synthesize() now returns an AudioChunk
                 # iterable and writes nothing. synthesize_wav sets the WAV header
                 # automatically (set_wav_format=True default).
