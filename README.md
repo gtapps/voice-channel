@@ -119,7 +119,7 @@ systemctl --user enable --now voice-dispatcher
 
 ### 5. Install the plugin
 
-Run these **where Claude Code runs** (same laptop, another LAN machine, or a container):
+Run these **where Claude Code Agent runs** (same laptop, another LAN machine, or a container):
 
 ```bash
 claude plugin marketplace add gtapps/voice-channel
@@ -128,11 +128,17 @@ claude plugin install voice@voice-channel --scope local
 
 ### 6. Configure the plugin
 
-Run `/voice:configure` inside a Claude Code session and answer the prompts:
+Boot Claude Code inside the folder your agent and configure the voice plugin:
+
+```bash
+/voice:configure
+```
+
+You will be prompt to answer the following:
 
 | Prompt         | Value                                                                                                              |
 | -------------- | ------------------------------------------------------------------------------------------------------------------ |
-| Dispatcher URL | `ws://localhost:7355` _(same machine)_ — see [URL table](#dispatcher-url--where-claude-code-runs) for other setups |
+| Dispatcher URL | `ws://127.0.0.1:7355` _(same machine)_ — see [URL table](#dispatcher-url--where-claude-code-runs) for other setups |
 | Token          | The token from step 3                                                                                              |
 | Agent ID       | `jarvis`                                                                                                           |
 
@@ -151,15 +157,12 @@ Use the result as `ws://<bridge-ip>:7355` (typically `172.17.0.1` or `172.18.0.1
 
 ### 7. Launch Claude Code with voice
 
-`voice-channel` is a community plugin (not Anthropic-signed), so the `--dangerously-load-development-channels` flag is required — it bypasses signature checks, nothing more. Make sure the dispatcher (step 4) is running first.
-
 ```bash
 cd /path/to/your/project
 claude --dangerously-load-development-channels plugin:voice@voice-channel
 ```
 
-> **Docker:** run this inside the container (same shell from step 5).
-> **First launch:** the plugin installs its Bun deps on first run. A `-32000` right after starting usually means it was still finishing — reconnect via `/plugin` or restart. See [plugin/voice/README.md](plugin/voice/README.md#runtime).
+`voice-channel` is a community plugin so the `--dangerously-load-development-channels` flag is required. Make sure the dispatcher (step 4) is running first.
 
 ### 8. Test it
 
@@ -180,11 +183,39 @@ setups is the host in the URL:
 
 ## Adding more agents
 
-Set up an additional agent in three steps:
+Each Claude Code instance connects to the dispatcher with its own `agent_id`. To add a second
+agent, repeat for each new instance:
 
-1. `voice-dispatcher config add-agent <id> --triggers "..." --voice <voice.onnx>` on the laptop
-2. `claude plugin install voice@voice-channel --scope local` inside that agent's container
-3. Write `~/.claude/channels/voice/config.json` with the matching dispatcher URL + token (or run `/voice:configure`)
+1. **Register on the dispatcher (laptop):**
+
+   ```bash
+   voice-dispatcher config add-agent beta --triggers "hey beta" --voice beta.onnx
+   ```
+
+2. **Give it its own config dir** by setting `VOICE_STATE_DIR` in the project's MCP server config
+   (`.mcp.json` or `.claude/settings.json`):
+
+   ```json
+   {
+     "mcpServers": {
+       "voice": {
+         "command": "bun",
+         "args": [
+           "run",
+           "--cwd",
+           "${CLAUDE_PLUGIN_ROOT}",
+           "--shell=bun",
+           "--silent",
+           "start"
+         ],
+         "env": { "VOICE_STATE_DIR": "/home/you/.claude/channels/voice" }
+       }
+     }
+   }
+   ```
+
+3. **Run `/voice:configure`** inside that Claude Code session — it picks up `VOICE_STATE_DIR`
+   automatically and writes the config to the right place.
 
 ## Troubleshooting
 

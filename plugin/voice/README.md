@@ -73,11 +73,17 @@ Operator
 
 ## Configuration
 
-Config lives at `~/.claude/channels/voice/config.json` (overridable via `VOICE_STATE_DIR`):
+Config lives at `~/.claude/channels/voice/config.json`. If your home directory is non-standard (e.g. a Docker container with a custom `HOME`), set `VOICE_STATE_DIR` to override:
+
+```bash
+export VOICE_STATE_DIR=/data/claude/channels/voice
+```
+
+The plugin and both skills read this variable, so the path is consistent everywhere.
 
 ```json
 {
-  "dispatcher_url": "ws://laptop.local:7355",
+  "dispatcher_url": "ws://127.0.0.1:7355",
   "token": "your-token-here",
   "agent_id": "jarvis",
   "enable_permission_relay": false
@@ -85,6 +91,39 @@ Config lives at `~/.claude/channels/voice/config.json` (overridable via `VOICE_S
 ```
 
 Run `/voice:configure` to write this file interactively.
+
+## Multiple agents on the same machine
+
+Each Claude Code instance connects to the dispatcher with its own `agent_id`. If you run two
+instances on the same box they must have different IDs — otherwise the dispatcher can't tell them
+apart.
+
+**1. Register each agent on the dispatcher (laptop):**
+
+```bash
+voice-dispatcher config add-agent alpha --triggers "hey alpha" --voice alpha.onnx
+voice-dispatcher config add-agent beta  --triggers "hey beta"  --voice beta.onnx
+```
+
+**2. Give each project its own config dir** by setting `VOICE_STATE_DIR` in the project's MCP
+server config (`.mcp.json` or `.claude/settings.json`):
+
+```json
+{
+  "mcpServers": {
+    "voice": {
+      "command": "bun",
+      "args": ["run", "--cwd", "${CLAUDE_PLUGIN_ROOT}", "--shell=bun", "--silent", "start"],
+      "env": { "VOICE_STATE_DIR": "/home/you/.claude/channels/voice-alpha" }
+    }
+  }
+}
+```
+
+Use a different path for each project (`voice-alpha`, `voice-beta`, …).
+
+**3. Run `/voice:configure` once per project.** The skill picks up `VOICE_STATE_DIR`
+automatically and writes the config to the right place.
 
 ## Permission relay
 

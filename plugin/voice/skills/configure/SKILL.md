@@ -26,7 +26,7 @@ Use the output as `<STATE_DIR>` for every file path below.
 
 Check if `<STATE_DIR>/config.json` exists. If it does, read it and record the current values for
 `dispatcher_url`, `token`, `agent_id`, and `enable_permission_relay`. Tell the user:
-*"Found existing config — showing current values as defaults."*
+_"Found existing config — showing current values as defaults."_
 
 ## Collect settings
 
@@ -43,8 +43,8 @@ questions: [
       // Always show the mDNS default first.
       // If existing config differs from the default, replace option 2 with the current value.
       // If existing config matches the default (or no config exists), use the LAN IP fallback as option 2.
-      { label: "ws://laptop.local:7355", description: "mDNS hostname — default" },
-      { label: "<current value OR 'Use LAN IP instead'>", description: "<'Current value' OR 'Enter ws://192.168.x.y:7355 via Other if mDNS isn't working'>" }
+      { label: "ws://127.0.0.1:7355", description: "localhost — default (dispatcher on the same machine)" },
+      { label: "<current value OR 'ws://laptop.local:7355'>", description: "<'Current value' OR 'Remote / Docker — mDNS hostname; use Other for a bare LAN IP'>" }
     ]
   },
   {
@@ -70,9 +70,10 @@ questions: [
 ```
 
 `AskUserQuestion` requires at least 2 options. For dispatcher_url and agent_id:
+
 - If existing config has a value different from the default → options are [default, current value]
 - If existing config matches the default, or there is no existing config → options are [default, meaningful alternative]
-  (LAN IP fallback for dispatcher_url; "Use a different ID" for agent_id)
+  (mDNS/remote fallback for dispatcher_url; "Use a different ID" for agent_id)
 
 ### Call 2 — Token
 
@@ -94,6 +95,7 @@ questions: [
 ```
 
 Handle the result:
+
 - **"Keep existing token"** → keep the token from the existing config unchanged
 - **"I don't have the token yet"** → stop here; remind the user to run
   `voice-dispatcher config add-agent <agent_id> --triggers "..."` on their laptop, then re-run
@@ -122,7 +124,7 @@ plugin inside this container — it does NOT modify the dispatcher's config on t
 ## Notes
 
 - This skill writes only to `<STATE_DIR>/config.json` inside this container.
-- To add this agent to the dispatcher, the user must run on their laptop:
+- To add this agent to the dispatcher, the user must run on their laptop if they didn't yet:
   `voice-dispatcher config add-agent <agent_id> --triggers "hey jarvis,jarvis"`
 - The dispatcher URL accepts both mDNS hostnames and bare IP addresses.
 - The token is the only authentication gate — treat it like a password.
