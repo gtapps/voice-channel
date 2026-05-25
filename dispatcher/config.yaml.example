@@ -12,13 +12,10 @@ audio:
   input_device: null    # e.g.  2  (integer index)
   output_device: null   # null = system default (AirPods for output is fine)
 
-  sample_rate: 16000    # Hz — must match Whisper's expected rate
-  channels: 1
+  # Capture rate is fixed at 16 kHz (Whisper's requirement); not configurable.
 
   # Silero VAD threshold — higher = less sensitive (fewer false positives)
   vad_threshold: 0.5
-  # Silence duration (seconds) that ends an utterance
-  silence_duration: 0.8
 
   # Play a short 40ms 600Hz click when VAD fires but no trigger matches.
   # Off by default.  Useful for debugging "is it even listening?" during setup.

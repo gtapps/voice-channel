@@ -73,21 +73,21 @@ def run_server(config_path: str, no_adapter: bool) -> None:
             ))
 
         pipeline.start()
-
-        if no_adapter:
-            logger.info("Running without WebSocket adapter (audio+core only)")
-            # Block until SIGINT/SIGTERM
-            loop = asyncio.get_running_loop()
-            stop = asyncio.Event()
-            loop.add_signal_handler(signal.SIGINT, stop.set)
-            loop.add_signal_handler(signal.SIGTERM, stop.set)
-            await stop.wait()
-        else:
-            from .adapters.websocket import WebSocketAdapter
-            adapter = WebSocketAdapter(dispatcher, cfg)
-            await adapter.run()
-
-        pipeline.stop()
+        try:
+            if no_adapter:
+                logger.info("Running without WebSocket adapter (audio+core only)")
+                # Block until SIGINT/SIGTERM
+                loop = asyncio.get_running_loop()
+                stop = asyncio.Event()
+                loop.add_signal_handler(signal.SIGINT, stop.set)
+                loop.add_signal_handler(signal.SIGTERM, stop.set)
+                await stop.wait()
+            else:
+                from .adapters.websocket import WebSocketAdapter
+                adapter = WebSocketAdapter(dispatcher, cfg)
+                await adapter.run()
+        finally:
+            pipeline.stop()
 
     try:
         asyncio.run(_main())

@@ -358,6 +358,98 @@ describe('permission relay (opt-in)', () => {
   })
 })
 
+describe('dispatcher ping → plugin pong (#9)', () => {
+  let ctx: SetupResult
+
+  beforeEach(async () => { ctx = await setup() }, 20_000)
+  afterEach(() => ctx.cleanup())
+
+  it('plugin responds pong to dispatcher ping on the same socket', async () => {
+    const [wsClient] = ctx.wsClients()
+
+    const pongPromise = new Promise<Record<string, unknown>>(res => {
+      wsClient.on('message', raw => {
+        const msg = JSON.parse(String(raw)) as Record<string, unknown>
+        if (msg.type === 'pong') res(msg)
+      })
+    })
+
+    wsClient.send(JSON.stringify({ type: 'ping' }))
+    const pong = await pongPromise
+    expect(pong.type).toBe('pong')
+  })
+})
+
+describe('reply tool: invalid args rejected (#10)', () => {
+  let ctx: SetupResult
+
+  beforeEach(async () => { ctx = await setup() }, 20_000)
+  afterEach(() => ctx.cleanup())
+
+  it('missing utterance_id returns isError and no speak frame', async () => {
+    const [wsClient] = ctx.wsClients()
+
+    const speakFrames: unknown[] = []
+    wsClient.on('message', raw => {
+      const msg = JSON.parse(String(raw)) as Record<string, unknown>
+      if (msg.type === 'speak') speakFrames.push(msg)
+    })
+
+    const resp = await ctx.send('tools/call', {
+      name: 'reply',
+      arguments: { text: 'hello' }, // utterance_id missing
+    })
+    expect((resp as { result?: { isError?: boolean } }).result?.isError).toBe(true)
+    // Give a brief window for any spurious speak frame to arrive
+    await new Promise(r => setTimeout(r, 100))
+    expect(speakFrames).toHaveLength(0)
+  })
+
+  it('empty text returns isError and no speak frame', async () => {
+    const [wsClient] = ctx.wsClients()
+
+    const speakFrames: unknown[] = []
+    wsClient.on('message', raw => {
+      const msg = JSON.parse(String(raw)) as Record<string, unknown>
+      if (msg.type === 'speak') speakFrames.push(msg)
+    })
+
+    const resp = await ctx.send('tools/call', {
+      name: 'reply',
+      arguments: { utterance_id: 'u-1', text: '' },
+    })
+    expect((resp as { result?: { isError?: boolean } }).result?.isError).toBe(true)
+    await new Promise(r => setTimeout(r, 100))
+    expect(speakFrames).toHaveLength(0)
+  })
+})
+
+describe('bad dispatcher URL rejected at startup (R6)', () => {
+  it('exits non-zero when dispatcher_url does not start with ws://', () => {
+    // Write a config with an http:// URL — the zod schema rejects it at load time
+    const port = 19999 // unused; process should exit before connecting
+    const dataDir = mkdtempSync(join(tmpdir(), 'voice-badurl-'))
+    writeFileSync(
+      join(dataDir, 'config.json'),
+      JSON.stringify({
+        dispatcher_url: `http://127.0.0.1:${port}`,
+        token: 'tok',
+        agent_id: 'test',
+        enable_permission_relay: false,
+      }),
+    )
+    const result = spawnSync(BUN, [join(PLUGIN_ROOT, 'server.ts')], {
+      cwd: PLUGIN_ROOT,
+      env: { ...process.env, VOICE_STATE_DIR: dataDir, CLAUDE_PLUGIN_ROOT: PLUGIN_ROOT },
+      timeout: 5_000,
+      encoding: 'utf8',
+    })
+    try { rmSync(dataDir, { recursive: true }) } catch { /* ignore */ }
+    expect(result.status, result.stderr).not.toBe(0)
+    expect(result.stderr).toMatch(/dispatcher_url must start with ws/)
+  })
+})
+
 describe('runtime: bun resolves channel deps', () => {
   it('bun resolves the SDK, ws, and zod from node_modules', () => {
     // The packaged plugin runs `bun server.ts` (via the start script, which

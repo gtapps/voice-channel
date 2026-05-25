@@ -45,6 +45,11 @@ LINUX_DEFAULT_DEVICE = "sysdefault"
 
 # ── Trigger matching ──────────────────────────────────────────────────────────
 
+def _tokenize(s: str) -> list[str]:
+    """Strip punctuation, lowercase, and split on whitespace."""
+    return re.sub(r"[^\w\s]", " ", s.lower()).split()
+
+
 def _levenshtein(a: str, b: str) -> int:
     """Simple Levenshtein distance — O(m*n), suitable for short trigger phrases."""
     if len(a) < len(b):
@@ -63,21 +68,39 @@ def _levenshtein(a: str, b: str) -> int:
 def match_trigger(
     transcript: str,
     triggers: list[str],
-    max_edit_distance: int = 2,
+    max_edit_distance: Optional[int] = None,
 ) -> tuple[Optional[str], str]:
     """
     Returns (matched_trigger, command_text) or (None, "") if no match.
 
-    Strips punctuation, lowercases, then checks startswith with up to
-    `max_edit_distance` edit tolerance on the trigger portion.
+    Tokenizes transcript and trigger on whitespace (after stripping punctuation
+    and lowercasing), then compares the first len(trigger_tokens) transcript
+    tokens against the trigger using Levenshtein distance.  This gives clean
+    word-boundary command extraction — no more mid-word slices like 'y report'
+    for trigger 'agent' vs transcript 'agency report'.
+
+    When max_edit_distance is None (default), a length-scaled tolerance is used:
+    max(1, len(trigger_without_spaces) // 5).  This rejects very-close
+    homophones ('agency' → 'agent', lev=2 > tol=1) while still accepting
+    one-off mishearings ('ey jarvis', lev=1 ≤ tol=1).
+    Pass an explicit int to override (e.g. max_edit_distance=10 for tests).
     """
-    clean = re.sub(r"[^\w\s]", "", transcript.lower()).strip()
+    transcript_tokens = _tokenize(transcript)
     for trigger in triggers:
-        t = re.sub(r"[^\w\s]", "", trigger.lower()).strip()
-        prefix = clean[: len(t)]
-        dist = _levenshtein(prefix, t)
-        if dist <= max_edit_distance:
-            command = clean[len(t):].strip()
+        trigger_tokens = _tokenize(trigger)
+        if not trigger_tokens:
+            continue
+        n = len(trigger_tokens)
+        if len(transcript_tokens) < n:
+            continue
+        head = " ".join(transcript_tokens[:n])
+        target = " ".join(trigger_tokens)
+        if max_edit_distance is None:
+            tol = max(1, len(target.replace(" ", "")) // 5)
+        else:
+            tol = max_edit_distance
+        if _levenshtein(head, target) <= tol:
+            command = " ".join(transcript_tokens[n:])
             return trigger, command
     return None, ""
 
@@ -123,7 +146,7 @@ def parse_verdict(transcript: str, expected_id: str) -> Optional[str]:
     speak the 5-letter id (phonetically — 'alpha bravo…' — or as letters) so
     that ambient speech ('yes' from a TV) cannot approve a tool call.
     """
-    tokens = re.sub(r"[^\w\s]", " ", transcript.lower()).split()
+    tokens = _tokenize(transcript)
     if len(tokens) < 2:
         return None
 
@@ -228,6 +251,7 @@ class AudioPipeline:
         # Subscribe to SpeakRequest events from the core
         from ..core.models import SpeakRequest as SpeakRequestEvent  # type: ignore
         from ..core.models import PermissionRequested  # type: ignore
+        from ..core.models import SpeakCompleted  # type: ignore
         self._dispatcher.bus.subscribe(SpeakRequestEvent, self._on_speak_request)
         # PermissionRequested is only emitted by the core when an agent has
         # enable_permission_relay=True, so subscribing unconditionally is safe.
@@ -325,6 +349,21 @@ class AudioPipeline:
 
     # ── Audio capture loop ────────────────────────────────────────────────────
 
+    def _maybe_expire_permission(self) -> None:
+        """Expire the permission listen window if the deadline has passed.
+
+        Called at the top of every audio-worker loop iteration so the window
+        expires even when the operator is silent (not only when speech arrives).
+        """
+        if self._pending_permission is None:
+            return
+        if time.monotonic() <= self._pending_permission_deadline:
+            return
+        agent_id, request_id = self._pending_permission
+        logger.info("permission verdict window expired — terminal-only fallback")
+        self._pending_permission = None
+        self._dispatcher.cancel_pending_permission(agent_id, request_id)
+
     def _audio_worker(self) -> None:
         try:
             import sounddevice as sd  # type: ignore
@@ -344,54 +383,59 @@ class AudioPipeline:
             if not self._speaking.is_set():
                 audio_q.put(indata[:, 0].copy())  # mono
 
-        stream = sd.InputStream(
-            samplerate=SAMPLE_RATE,
-            channels=1,
-            dtype="float32",
-            blocksize=CHUNK_SAMPLES,
-            device=device,
-            callback=_callback,
-        )
+        try:
+            stream = sd.InputStream(
+                samplerate=SAMPLE_RATE,
+                channels=1,
+                dtype="float32",
+                blocksize=CHUNK_SAMPLES,
+                device=device,
+                callback=_callback,
+            )
 
-        speech_buf: list[np.ndarray] = []
-        in_speech = False
-        silence_count = 0
+            speech_buf: list[np.ndarray] = []
+            in_speech = False
+            silence_count = 0
 
-        with stream:
-            while not self._stop_event.is_set():
-                # Drain while speaking (half-duplex)
-                if self._speaking.is_set():
+            with stream:
+                while not self._stop_event.is_set():
+                    self._maybe_expire_permission()
+                    # Drain while speaking (half-duplex)
+                    if self._speaking.is_set():
+                        try:
+                            audio_q.get(timeout=0.05)
+                        except queue.Empty:
+                            pass
+                        continue
+
                     try:
-                        audio_q.get(timeout=0.05)
+                        chunk = audio_q.get(timeout=0.1)
                     except queue.Empty:
-                        pass
-                    continue
+                        continue
 
-                try:
-                    chunk = audio_q.get(timeout=0.1)
-                except queue.Empty:
-                    continue
+                    # VAD scoring
+                    speech_prob = self._vad_score(chunk)
 
-                # VAD scoring
-                speech_prob = self._vad_score(chunk)
-
-                if speech_prob >= self._vad_threshold:
-                    in_speech = True
-                    silence_count = 0
-                    speech_buf.append(chunk)
-                    if len(speech_buf) >= MAX_UTTERANCE_CHUNKS:
-                        # Force-end very long utterances
-                        self._process_speech(np.concatenate(speech_buf))
-                        speech_buf = []
-                        in_speech = False
-                elif in_speech:
-                    speech_buf.append(chunk)
-                    silence_count += 1
-                    if silence_count >= SILENCE_CHUNKS_END:
-                        self._process_speech(np.concatenate(speech_buf))
-                        speech_buf = []
-                        in_speech = False
+                    if speech_prob >= self._vad_threshold:
+                        in_speech = True
                         silence_count = 0
+                        speech_buf.append(chunk)
+                        if len(speech_buf) >= MAX_UTTERANCE_CHUNKS:
+                            # Force-end very long utterances
+                            self._process_speech(np.concatenate(speech_buf))
+                            speech_buf = []
+                            in_speech = False
+                    elif in_speech:
+                        speech_buf.append(chunk)
+                        silence_count += 1
+                        if silence_count >= SILENCE_CHUNKS_END:
+                            self._process_speech(np.concatenate(speech_buf))
+                            speech_buf = []
+                            in_speech = False
+                            silence_count = 0
+
+        except Exception as exc:
+            logger.error("audio worker crashed: %s — voice input disabled", exc)
 
     def _vad_score(self, chunk) -> float:
         """Return speech probability for this chunk (0.0–1.0)."""
@@ -437,10 +481,9 @@ class AudioPipeline:
             return
 
         if self._pending_permission is not None:
-            if time.monotonic() > self._pending_permission_deadline:
-                logger.info("permission verdict window expired — terminal-only fallback")
-                self._pending_permission = None
-            else:
+            self._maybe_expire_permission()
+            if self._pending_permission is not None:
+                # Still within the window — handle spoken verdict
                 agent_id, request_id = self._pending_permission
                 behavior = parse_verdict(transcript, request_id)
                 if behavior is not None:
@@ -451,6 +494,7 @@ class AudioPipeline:
                 else:
                     logger.debug("no valid verdict in %r — still listening", transcript)
                 return  # in priority mode, never fall through to trigger matching
+            # expired — fall through to trigger matching
 
         # Match against all registered agents
         for agent_id, agent_cfg in self._agents.items():
@@ -526,6 +570,8 @@ class AudioPipeline:
                 voice.synthesize_wav(text, wf)
 
             self._play_wav(buf.getvalue())
+            if not uid.startswith("perm-"):
+                self._dispatcher.bus.emit(SpeakCompleted(agent_id=agent_id, utterance_id=uid))
 
         except Exception as exc:
             logger.error("TTS playback failed: %s", exc)

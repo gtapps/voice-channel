@@ -77,6 +77,13 @@ class AgentDisconnected:
     reason: str
 
 
+@dataclass(frozen=True)
+class SpeakCompleted:
+    """Emitted after TTS playback of a speak reply finishes (not for permission prompts)."""
+    agent_id: str
+    utterance_id: str
+
+
 # Type alias for the event union (open — new event types are additive)
 Event = (
     TranscriptEvent
@@ -86,4 +93,5 @@ Event = (
     | PermissionVerdict
     | AgentConnected
     | AgentDisconnected
+    | SpeakCompleted
 )

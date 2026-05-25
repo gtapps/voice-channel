@@ -36,7 +36,7 @@ const CONFIG_FILE = join(STATE_DIR, 'config.json')
 const STATUS_FILE = join(STATE_DIR, 'status.json')
 
 const ConfigSchema = z.object({
-  dispatcher_url: z.string().min(1),
+  dispatcher_url: z.string().regex(/^wss?:\/\//, 'dispatcher_url must start with ws:// or wss://'),
   token: z.string().min(1),
   agent_id: z.string().min(1).default('agent'),
   enable_permission_relay: z.boolean().default(false),
@@ -77,7 +77,7 @@ const experimental: Record<string, object> = { 'claude/channel': {} }
 if (cfg.enable_permission_relay) experimental['claude/channel/permission'] = {}
 
 const mcp = new Server(
-  { name: 'voice', version: '0.1.0' },
+  { name: 'voice', version: '0.0.1' },
   {
     capabilities: { tools: {}, experimental },
     instructions: [
@@ -117,7 +117,15 @@ mcp.setRequestHandler(CallToolRequestSchema, async req => {
       isError: true,
     }
   }
-  const args = req.params.arguments as { utterance_id: string; text: string }
+  const ReplyArgs = z.object({ utterance_id: z.string().min(1), text: z.string().min(1) })
+  const parsed = ReplyArgs.safeParse(req.params.arguments)
+  if (!parsed.success) {
+    return {
+      content: [{ type: 'text', text: `voice: invalid reply args: ${parsed.error.message}` }],
+      isError: true,
+    }
+  }
+  const args = parsed.data
   if (!socket || socket.readyState !== WS.OPEN) {
     return {
       content: [{ type: 'text', text: 'voice: not connected to dispatcher' }],
@@ -155,15 +163,28 @@ let socket: WS | null = null
 let shuttingDown = false
 let reconnectAttempt = 0
 let pingTimer: ReturnType<typeof setInterval> | null = null
+let lastError: string | null = null
 
 function connect(): void {
   if (shuttingDown) return
 
-  const ws = new WS(cfg.dispatcher_url)
+  let ws: WS
+  try {
+    ws = new WS(cfg.dispatcher_url)
+  } catch (err) {
+    lastError = String(err)
+    process.stderr.write(`voice: failed to create WebSocket: ${lastError}\n`)
+    writeStatus({ state: 'error', dispatcher_url: cfg.dispatcher_url, last_error: lastError })
+    reconnectAttempt++
+    const delay = Math.min(1_000 * reconnectAttempt, 30_000)
+    setTimeout(connect, delay)
+    return
+  }
   socket = ws
 
   ws.on('open', () => {
     reconnectAttempt = 0
+    lastError = null
     writeStatus({ state: 'connected', dispatcher_url: cfg.dispatcher_url })
     ws.send(JSON.stringify({ v: 1, type: 'hello', agent_id: cfg.agent_id, token: cfg.token }))
 
@@ -223,6 +244,10 @@ function connect(): void {
         }
         break
 
+      case 'ping':
+        if (ws.readyState === WS.OPEN) ws.send(JSON.stringify({ type: 'pong' }))
+        break
+
       case 'pong':
         break
 
@@ -234,12 +259,14 @@ function connect(): void {
   ws.on('close', (code, reason) => {
     socket = null
     if (pingTimer) { clearInterval(pingTimer); pingTimer = null }
-    writeStatus({
+    const statusFields: Record<string, unknown> = {
       state: 'disconnected',
       dispatcher_url: cfg.dispatcher_url,
       last_close_code: code,
       last_close_reason: reason.toString(),
-    })
+    }
+    if (lastError !== null) statusFields.last_error = lastError
+    writeStatus(statusFields)
     if (!shuttingDown) {
       reconnectAttempt++
       const delay = Math.min(1_000 * reconnectAttempt, 30_000)
@@ -249,6 +276,7 @@ function connect(): void {
   })
 
   ws.on('error', err => {
+    lastError = err.message
     process.stderr.write(`voice: WebSocket error: ${err.message}\n`)
   })
 }

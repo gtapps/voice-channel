@@ -96,6 +96,10 @@ class Dispatcher:
             logger.warning("speak: unknown agent %r — dropping", agent_id)
             return
 
+        if not utterance_id or not text:
+            logger.warning("speak: empty utterance_id/text from %r — dropping", agent_id)
+            return
+
         logger.info("speak: agent=%r uid=%r text=%r", agent_id, utterance_id, text)
         self.bus.emit(SpeakRequest(
             agent_id=agent_id,
@@ -126,6 +130,13 @@ class Dispatcher:
             logger.debug(
                 "request_permission: agent %r has permission relay disabled — dropping",
                 agent_id,
+            )
+            return
+
+        if session.pending_permission_request_id is not None:
+            logger.warning(
+                "request_permission: already pending %r — deferring %r to terminal",
+                session.pending_permission_request_id, request_id,
             )
             return
 
@@ -165,7 +176,14 @@ class Dispatcher:
             logger.warning("submit_permission_verdict: unknown agent %r — dropping", agent_id)
             return
 
-        # Clear the pending request regardless of match (avoid stale state)
+        pending = session.pending_permission_request_id
+        if pending != request_id:
+            logger.warning(
+                "submit_permission_verdict: request_id %r does not match pending %r — dropping",
+                request_id, pending,
+            )
+            return
+
         session.pending_permission_request_id = None
         logger.info(
             "submit_permission_verdict: agent=%r id=%r behavior=%r",
@@ -190,6 +208,18 @@ class Dispatcher:
         if session:
             session.connected = False
         self.bus.emit(AgentDisconnected(agent_id=agent_id, code=code, reason=reason))
+
+    def cancel_pending_permission(self, agent_id: str, request_id: str) -> None:
+        """Clear the pending permission if it matches request_id."""
+        session = self.registry.get(agent_id)
+        if session is None:
+            return
+        if session.pending_permission_request_id == request_id:
+            session.pending_permission_request_id = None
+            logger.info(
+                "cancel_pending_permission: agent=%r id=%r (window expired)",
+                agent_id, request_id,
+            )
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────

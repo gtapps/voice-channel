@@ -19,7 +19,7 @@ import logging
 from typing import Optional
 
 from ..core.handlers import Dispatcher
-from ..core.models import TranscriptDispatched, PermissionVerdict
+from ..core.models import TranscriptDispatched, PermissionVerdict, SpeakCompleted
 from ..core.session import AgentConfig, SessionRegistry
 
 logger = logging.getLogger(__name__)
@@ -55,7 +55,15 @@ class WebSocketAdapter:
                 enable_permission_relay=hcfg.get("enable_permission_relay", False),
             )
             self._dispatcher.registry.register(hc)
-            self._token_map[token] = agent_id
+            if not token:
+                logger.warning("agent %r has no websocket_token — cannot authenticate", agent_id)
+            elif token in self._token_map:
+                logger.warning(
+                    "duplicate websocket_token for agents %r and %r — keeping first",
+                    self._token_map[token], agent_id,
+                )
+            else:
+                self._token_map[token] = agent_id
 
         # Event loop — set when run() / an external harness starts the server.
         # Bus callbacks are called from arbitrary threads; they need the loop to
@@ -65,6 +73,7 @@ class WebSocketAdapter:
         # Subscribe to events that need to be pushed to agents
         self._dispatcher.bus.subscribe(TranscriptDispatched, self._on_transcript_dispatched)
         self._dispatcher.bus.subscribe(PermissionVerdict, self._on_permission_verdict)
+        self._dispatcher.bus.subscribe(SpeakCompleted, self._on_speak_completed)
 
     async def run(self) -> None:
         """Start the WebSocket server and serve until cancelled."""
@@ -113,6 +122,14 @@ class WebSocketAdapter:
                 logger.warning("rejected connection: invalid token from %s (tok=%.8s…)", remote_ip, token)
                 return
 
+            existing = self._connections.get(agent_id)
+            if existing is not None and existing is not ws:
+                logger.info("agent %s reconnected — closing previous connection", agent_id)
+                try:
+                    await existing.close(4002, "superseded by new connection")
+                except Exception:
+                    pass
+
             logger.info("agent connected: %s", agent_id)
             self._connections[agent_id] = ws
             self._dispatcher.on_connected(agent_id)
@@ -125,13 +142,18 @@ class WebSocketAdapter:
             logger.debug("connection error: %s", exc)
         finally:
             if agent_id:
-                self._connections.pop(agent_id, None)
-                close_code = ws.close_code or 0
-                close_reason = ws.close_reason or ""
-                self._dispatcher.on_disconnected(agent_id, close_code, close_reason)
-                logger.info("agent disconnected: %s (code=%s)", agent_id, close_code)
+                if self._connections.get(agent_id) is ws:
+                    self._connections.pop(agent_id, None)
+                    close_code = ws.close_code or 0
+                    close_reason = ws.close_reason or ""
+                    self._dispatcher.on_disconnected(agent_id, close_code, close_reason)
+                    logger.info("agent disconnected: %s (code=%s)", agent_id, close_code)
+                else:
+                    logger.debug("stale connection closed for %s — ignoring", agent_id)
 
     async def _handle_message(self, agent_id: str, ws, raw: str) -> None:
+        if self._connections.get(agent_id) is not ws:
+            return
         try:
             msg = json.loads(raw)
         except json.JSONDecodeError:
@@ -196,5 +218,16 @@ class WebSocketAdapter:
             "type": "permission_verdict",
             "request_id": event.request_id,
             "behavior": event.behavior,
+        })
+        self._schedule(ws.send(payload))
+
+    def _on_speak_completed(self, event: SpeakCompleted) -> None:
+        """Push a spoke frame to the agent's WebSocket after TTS playback."""
+        ws = self._connections.get(event.agent_id)
+        if ws is None:
+            return
+        payload = json.dumps({
+            "type": "spoke",
+            "utterance_id": event.utterance_id,
         })
         self._schedule(ws.send(payload))

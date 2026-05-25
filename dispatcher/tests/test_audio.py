@@ -127,6 +127,15 @@ def test_custom_max_edit_distance() -> None:
     assert trigger == "hey jarvis"
 
 
+def test_word_boundary_not_matched() -> None:
+    trigger, command = match_trigger(
+        "agency report",
+        ["agent"],
+    )
+    assert trigger is None
+    assert command == ""
+
+
 # ── Permission relay: phonetic spelling ───────────────────────────────────────
 
 def test_phonetic_spell_basic() -> None:

@@ -226,6 +226,77 @@ def test_submit_verdict_invalid_behavior_drops() -> None:
     assert events == []
 
 
+# ── request_permission: defer second (#4) ────────────────────────────────────
+
+def test_second_request_permission_while_pending_is_deferred() -> None:
+    d = make_dispatcher(enable_permission_relay=True)
+    events = collect(d, PermissionRequested)
+    d.request_permission("jarvis", "abcde", "Bash", "first", "{}")
+    d.request_permission("jarvis", "fghij", "Write", "second", "{}")
+    assert len(events) == 1
+    assert events[0].request_id == "abcde"
+    session = d.registry.get("jarvis")
+    assert session is not None
+    assert session.pending_permission_request_id == "abcde"
+
+
+# ── submit_permission_verdict: strict id guard (#3) ───────────────────────────
+
+def test_submit_verdict_wrong_id_drops() -> None:
+    d = make_dispatcher(enable_permission_relay=True)
+    events = collect(d, PermissionVerdict)
+    d.request_permission("jarvis", "abcde", "Bash", "pwd", "{}")
+    d.submit_permission_verdict("jarvis", "fghij", "allow")
+    assert events == []
+    session = d.registry.get("jarvis")
+    assert session is not None
+    assert session.pending_permission_request_id == "abcde"  # still pending
+
+
+def test_submit_verdict_with_no_pending_drops() -> None:
+    d = make_dispatcher(enable_permission_relay=True)
+    events = collect(d, PermissionVerdict)
+    # No request_permission first — pending is None
+    d.submit_permission_verdict("jarvis", "abcde", "allow")
+    assert events == []
+
+
+# ── cancel_pending_permission (#4 expiry) ────────────────────────────────────
+
+def test_cancel_pending_permission_clears_on_match() -> None:
+    d = make_dispatcher(enable_permission_relay=True)
+    d.request_permission("jarvis", "abcde", "Bash", "pwd", "{}")
+    d.cancel_pending_permission("jarvis", "abcde")
+    session = d.registry.get("jarvis")
+    assert session is not None
+    assert session.pending_permission_request_id is None
+
+
+def test_cancel_pending_permission_ignores_wrong_id() -> None:
+    d = make_dispatcher(enable_permission_relay=True)
+    d.request_permission("jarvis", "abcde", "Bash", "pwd", "{}")
+    d.cancel_pending_permission("jarvis", "fghij")
+    session = d.registry.get("jarvis")
+    assert session is not None
+    assert session.pending_permission_request_id == "abcde"
+
+
+# ── speak: non-empty validation (#5) ─────────────────────────────────────────
+
+def test_speak_empty_utterance_id_drops() -> None:
+    d = make_dispatcher()
+    events = collect(d, SpeakRequest)
+    d.speak("jarvis", "", "hello")
+    assert events == []
+
+
+def test_speak_empty_text_drops() -> None:
+    d = make_dispatcher()
+    events = collect(d, SpeakRequest)
+    d.speak("jarvis", "u-1", "")
+    assert events == []
+
+
 # ── Connection lifecycle ──────────────────────────────────────────────────────
 
 def test_on_connected_emits_event() -> None:
