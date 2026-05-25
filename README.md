@@ -64,8 +64,8 @@ pipx install "git+https://github.com/gtapps/voice-channel.git#subdirectory=dispa
 ```bash
 # Windows (WSL2)
 sudo apt install portaudio19-dev pipewire-bin pipx sox libsox-fmt-pulse libasound2-plugins pulseaudio unzip
-
 pipx ensurepath   # restart your shell afterwards so pipx-installed commands land on PATH
+pipx install "git+https://github.com/gtapps/voice-channel.git#subdirectory=dispatcher"
 ```
 
 </details>
