@@ -61,7 +61,6 @@ sudo apt install portaudio19-dev pipewire-bin pipx
 pipx install "git+https://github.com/gtapps/voice-channel.git#subdirectory=dispatcher"
 ```
 
-
 ```bash
 # Windows (WSL2)
 sudo apt install portaudio19-dev pipewire-bin pipx sox libsox-fmt-pulse libasound2-plugins pulseaudio unzip
@@ -139,36 +138,29 @@ Linux box), install it first — on WSL2 this needs `unzip` from [step 1](#1-ins
 curl -fsSL https://bun.sh/install | bash   # then restart your shell
 ```
 
-Then add the plugin:
+Then install the plugin:
 
 ```bash
 claude plugin marketplace add gtapps/voice-channel
 claude plugin install voice@voice-channel --scope local
 ```
 
-### 6. Launch Claude Code with voice and configure
+### 6. Configure the plugin
 
-Start Claude Code with the plugin loaded (`voice-channel` is a community plugin so the flag is required):
+Inside a Claude Code session, run:
 
 ```bash
-cd /path/to/your/project
-claude --dangerously-load-development-channels plugin:voice@voice-channel
-```
-
-Make sure the dispatcher (step 4) is running first. Then inside the session, run:
-
-```
 /voice:configure
 ```
 
 You will be prompted to answer:
 
-| Prompt         | Value                                                                                                                  |
-| -------------- | ---------------------------------------------------------------------------------------------------------------------- |
-| Dispatcher URL | `wss://127.0.0.1:7355` _(same machine)_ — see [URL table](#dispatcher-url--where-claude-code-runs) for other setups   |
-| Pairing string | The `voicepair_...` string printed in step 3 (bundles agent ID, token, and TLS fingerprint in one paste)               |
+| Prompt         | Value                                                                                                               |
+| -------------- | ------------------------------------------------------------------------------------------------------------------- |
+| Dispatcher URL | `wss://127.0.0.1:7355` _(same machine)_ — see [URL table](#dispatcher-url--where-claude-code-runs) for other setups |
+| Pairing string | The `voicepair_...` string printed in step 3 (bundles agent ID, token, and TLS fingerprint in one paste)            |
 
-The skill writes the **bearer token** to `~/.claude/channels/voice/.env` (chmod 600 — it's a credential) and the rest of the config to `config.json`. After configuring, run `/reload-plugins` to connect immediately without restarting the session.
+The skill writes the **bearer token** to `~/.claude/channels/voice/.env` (chmod 600 — it's a credential) and the rest of the config to `config.json`.
 
 <details>
 <summary>Docker (same host): find the bridge-gateway IP</summary>
@@ -183,7 +175,15 @@ Use the result as `wss://<bridge-ip>:7355` (typically `172.17.0.1` or `172.18.0.
 
 </details>
 
-### 7. Test it
+### 7. Launch Claude Code with voice
+
+```bash
+claude --dangerously-load-development-channels plugin:voice@voice-channel
+```
+
+`voice-channel` is a community plugin so the `--dangerously-load-development-channels` flag is required. Make sure the dispatcher (step 4) is running first.
+
+### 8. Test it
 
 Say **"hey jarvis, what time is it?"** — Claude should reply aloud.
 
@@ -194,9 +194,9 @@ Say **"hey jarvis, what time is it?"** — Claude should reply aloud.
 The dispatcher binds `0.0.0.0:7355` by default, so the only thing that changes between
 setups is the host in the URL:
 
-| Where Claude Code runs                                | Dispatcher URL                                                                                                                     |
-| ----------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
-| **Same machine** as the dispatcher (no Docker)        | `wss://127.0.0.1:7355`                                                                                                             |
+| Where Claude Code runs                                | Dispatcher URL                                                                                                                    |
+| ----------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| **Same machine** as the dispatcher (no Docker)        | `wss://127.0.0.1:7355`                                                                                                            |
 | **Separate LAN machine** (typical multi-device setup) | `wss://192.168.x.y:7355` (static IP) or `wss://laptop.local:7355` (mDNS)                                                          |
 | **Docker on the same host** as the dispatcher         | `wss://<bridge-gateway>:7355` — find with the snippet in [step 6](#6-configure-the-plugin); typically `172.17.0.1` / `172.18.0.1` |
 
@@ -244,6 +244,7 @@ plugin **pins the dispatcher's SHA-256 cert fingerprint** before sending its bea
 token is never transmitted to an impersonator occupying the same host/port.
 
 Identity is split:
+
 - **Cert** (shared, per-dispatcher) — answers _"is this the real dispatcher?"_
 - **Token** (per-agent, secret) — answers _"which agent is this?"_
 
@@ -251,6 +252,7 @@ The token is stored in `~/.claude/channels/voice/.env` at `chmod 600` (it's a cr
 fingerprint is stored in `config.json` (it's public).
 
 **How pairing works:**
+
 1. `voice-dispatcher config add-agent <id> ...` → auto-provisions cert, prints one `voicepair_...` string
 2. Paste it into `/voice:configure` → decoded by Bun, writes `.env` + `config.json`
 3. On connect, the plugin runs a TLS preflight, compares the fingerprint, and only opens the real
@@ -264,6 +266,7 @@ the preflight check and the WebSocket connection (the two are separate TLS sessi
 limitation of the Bun/ws approach). For that threat model, add a VPN or Tailscale/WireGuard tunnel.
 
 **Cert management:**
+
 ```bash
 voice-dispatcher tls fingerprint   # print current fingerprint
 voice-dispatcher tls rotate        # replace cert — all agents must re-pair

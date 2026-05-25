@@ -70,12 +70,12 @@ Ask alone so the user can focus on pasting it:
 questions: [
   {
     header: "Pairing string",
-    question: "Pairing string printed by the dispatcher when you ran: voice-dispatcher config add-agent <id> --triggers '...' --voice <voice.onnx>",
+    question: "Paste the pairing string printed by the dispatcher:",
     options: [
       // Include ONLY if existing config has all three fields (agent_id, dispatcher_cert_sha256)
       // AND the .env file has a token:
       { label: "Keep existing pairing", description: "Leave the current agent ID, token, and cert fingerprint unchanged" },
-      { label: "I don't have the pairing string yet", description: "Run the add-agent command above first — it prints a voicepair_... string. Re-run /voice:configure after." }
+      { label: "I don't have the pairing string yet", description: "Run voice-dispatcher config add-agent <id> --triggers '...' --voice <voice.onnx> on the dispatcher first, then re-run /voice:configure." }
     ]
     // User pastes the actual voicepair_... string via Other
   }
@@ -99,6 +99,7 @@ bun -e 'process.stdout.write(Buffer.from(process.argv[1].replace(/^voicepair_/,"
 ```
 
 Parse the JSON output. It contains:
+
 - `agent_id` — the agent's ID on the dispatcher
 - `token` — the bearer token (a credential — write to `.env`, not `config.json`)
 - `cert_sha256` — the dispatcher's TLS cert fingerprint (public — write to `config.json`)
@@ -108,6 +109,7 @@ Parse the JSON output. It contains:
 Create `<STATE_DIR>` if it does not exist, then:
 
 **`<STATE_DIR>/.env`** — the token is a credential:
+
 ```
 VOICE_DISPATCHER_TOKEN=<token>
 ```
@@ -117,6 +119,7 @@ chmod 600 "<STATE_DIR>/.env"
 ```
 
 **`<STATE_DIR>/config.json`**:
+
 ```json
 {
   "dispatcher_url": "<dispatcher_url>",
@@ -128,10 +131,14 @@ chmod 600 "<STATE_DIR>/.env"
 
 ## After writing
 
-Tell the user the MCP server will reconnect automatically on the next Claude Code
-session start, or they can restart the current session to connect immediately.
-This skill only configures the plugin inside this container — it does NOT modify
-the dispatcher's config on the laptop.
+Tell the user:
+
+- To activate the channel, close this session and start a new one with:
+  ```
+  claude --dangerously-load-development-channels plugin:voice@voice-channel
+  ```
+- This skill only configures the plugin inside this container — it does NOT modify
+  the dispatcher's config on the laptop.
 
 ## Notes
 
