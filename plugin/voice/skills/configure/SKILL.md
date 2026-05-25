@@ -40,17 +40,22 @@ questions: [
     header: "Dispatcher URL",
     question: "WebSocket URL of the voice-dispatcher on your laptop?",
     options: [
+      // Always show the mDNS default first.
+      // If existing config differs from the default, replace option 2 with the current value.
+      // If existing config matches the default (or no config exists), use the LAN IP fallback as option 2.
       { label: "ws://laptop.local:7355", description: "mDNS hostname — default" },
-      { label: "<current dispatcher_url>", description: "Current value" }
+      { label: "<current value OR 'Use LAN IP instead'>", description: "<'Current value' OR 'Enter ws://192.168.x.y:7355 via Other if mDNS isn't working'>" }
     ]
-    // User enters a custom IP like ws://192.168.x.y:7355 via Other if mDNS isn't working
   },
   {
     header: "Agent ID",
     question: "Identifier for this agent (must match the dispatcher's add-agent command)?",
     options: [
+      // Always show the default first.
+      // If existing config differs from the default, replace option 2 with the current value.
+      // If existing config matches the default (or no config exists), use a descriptive second option.
       { label: "agent", description: "Default" },
-      { label: "<current agent_id>", description: "Current value" }
+      { label: "<current value OR 'Use a different ID'>", description: "<'Current value' OR 'Type a custom agent_id via Other'>" }
     ]
   },
   {
@@ -64,8 +69,10 @@ questions: [
 ]
 ```
 
-When an existing config value matches the default, show only the default option (+ Other). When it
-differs, show both the default and the current value as options.
+`AskUserQuestion` requires at least 2 options. For dispatcher_url and agent_id:
+- If existing config has a value different from the default → options are [default, current value]
+- If existing config matches the default, or there is no existing config → options are [default, meaningful alternative]
+  (LAN IP fallback for dispatcher_url; "Use a different ID" for agent_id)
 
 ### Call 2 — Token
 
