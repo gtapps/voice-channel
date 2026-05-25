@@ -1,6 +1,7 @@
 # voice-channel
 
 ![CI](https://github.com/gtapps/voice-channel/actions/workflows/ci.yml/badge.svg)
+![Version](https://img.shields.io/github/v/release/gtapps/voice-channel)
 ![License](https://img.shields.io/github/license/gtapps/voice-channel)
 ![Downloads](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/gtapps/voice-channel/_gh_traffic_stats/.github/badges/clones.json)
 ![Views](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/gtapps/voice-channel/_gh_traffic_stats/.github/badges/views.json)
