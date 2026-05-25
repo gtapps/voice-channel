@@ -54,7 +54,7 @@ questions: [
       // Always show the default first.
       // If existing config differs from the default, replace option 2 with the current value.
       // If existing config matches the default (or no config exists), use a descriptive second option.
-      { label: "agent", description: "Default" },
+      { label: "jarvis", description: "Default" },
       { label: "<current value OR 'Use a different ID'>", description: "<'Current value' OR 'Type a custom agent_id via Other'>" }
     ]
   },
