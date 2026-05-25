@@ -2,6 +2,7 @@
 name: voice:configure
 description: Configure the voice channel connection — dispatcher URL, pairing string (bundles agent ID, token, and cert fingerprint), and optional permission-relay opt-in.
 allowed-tools:
+  - AskUserQuestion
   - Read
   - Write
   - Bash(echo *)

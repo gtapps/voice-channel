@@ -22,17 +22,19 @@ claude plugin marketplace add gtapps/voice-channel   # once
 claude plugin install voice@voice-channel --scope local
 ```
 
-Then configure (writes `~/.claude/channels/voice/config.json` and `.env`):
+Start a session with the channel loaded (`voice-channel` is a community plugin so the flag is required):
+
+```bash
+claude --dangerously-load-development-channels plugin:voice@voice-channel
+```
+
+Then inside the session, configure (writes `~/.claude/channels/voice/config.json` and `.env`):
 
 ```
 /voice:configure
 ```
 
-Start a session with the channel loaded:
-
-```bash
-claude --dangerously-load-development-channels plugin:voice@voice-channel
-```
+Run `/reload-plugins` after configuring to connect immediately without restarting.
 
 ## Requirements
 

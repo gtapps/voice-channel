@@ -146,11 +146,18 @@ claude plugin marketplace add gtapps/voice-channel
 claude plugin install voice@voice-channel --scope local
 ```
 
-### 6. Configure the plugin
+### 6. Launch Claude Code with voice and configure
 
-Boot Claude Code inside the folder your agent and configure the voice plugin:
+Start Claude Code with the plugin loaded (`voice-channel` is a community plugin so the flag is required):
 
 ```bash
+cd /path/to/your/project
+claude --dangerously-load-development-channels plugin:voice@voice-channel
+```
+
+Make sure the dispatcher (step 4) is running first. Then inside the session, run:
+
+```
 /voice:configure
 ```
 
@@ -161,7 +168,7 @@ You will be prompted to answer:
 | Dispatcher URL | `wss://127.0.0.1:7355` _(same machine)_ — see [URL table](#dispatcher-url--where-claude-code-runs) for other setups   |
 | Pairing string | The `voicepair_...` string printed in step 3 (bundles agent ID, token, and TLS fingerprint in one paste)               |
 
-The skill writes the **bearer token** to `~/.claude/channels/voice/.env` (chmod 600 — it's a credential) and the rest of the config to `config.json`.
+The skill writes the **bearer token** to `~/.claude/channels/voice/.env` (chmod 600 — it's a credential) and the rest of the config to `config.json`. After configuring, run `/reload-plugins` to connect immediately without restarting the session.
 
 <details>
 <summary>Docker (same host): find the bridge-gateway IP</summary>
@@ -176,16 +183,7 @@ Use the result as `wss://<bridge-ip>:7355` (typically `172.17.0.1` or `172.18.0.
 
 </details>
 
-### 7. Launch Claude Code with voice
-
-```bash
-cd /path/to/your/project
-claude --dangerously-load-development-channels plugin:voice@voice-channel
-```
-
-`voice-channel` is a community plugin so the `--dangerously-load-development-channels` flag is required. Make sure the dispatcher (step 4) is running first.
-
-### 8. Test it
+### 7. Test it
 
 Say **"hey jarvis, what time is it?"** — Claude should reply aloud.
 
