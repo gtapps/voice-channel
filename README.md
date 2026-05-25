@@ -181,40 +181,35 @@ setups is the host in the URL:
 | **Separate LAN machine** (typical multi-device setup) | `ws://laptop.local:7355` (mDNS) or `ws://192.168.x.y:7355` (static IP)                                                           |
 | **Docker on the same host** as the dispatcher         | `ws://<bridge-gateway>:7355` — find with the snippet in [step 6](#6-configure-the-plugin); typically `172.17.0.1` / `172.18.0.1` |
 
-## Adding more agents
+## Multiple agents on the same machine
 
-Each Claude Code instance connects to the dispatcher with its own `agent_id`. To add a second
-agent, repeat for each new instance:
+Each Claude Code instance connects to the dispatcher with its own `agent_id`. If you run two
+instances on the same box they must have different IDs — otherwise the dispatcher can't tell them
+apart.
 
-1. **Register on the dispatcher (laptop):**
+1. **Register each agent on the dispatcher (laptop):**
 
    ```bash
-   voice-dispatcher config add-agent beta --triggers "hey beta" --voice beta.onnx
+   voice-dispatcher config add-agent alpha --triggers "hey alpha" --voice alpha.onnx
+   voice-dispatcher config add-agent beta  --triggers "hey beta"  --voice beta.onnx
    ```
 
-2. **Give it its own config dir** by setting `VOICE_STATE_DIR` in the project's MCP server config
-   (`.mcp.json` or `.claude/settings.json`):
+2. **Give each instance its own config dir** by adding `VOICE_STATE_DIR` to the project's
+   `.claude/settings.local.json` (gitignored, machine-local):
 
    ```json
    {
-     "mcpServers": {
-       "voice": {
-         "command": "bun",
-         "args": [
-           "run",
-           "--cwd",
-           "${CLAUDE_PLUGIN_ROOT}",
-           "--shell=bun",
-           "--silent",
-           "start"
-         ],
-         "env": { "VOICE_STATE_DIR": "/home/you/.claude/channels/voice" }
-       }
+     "env": {
+       "VOICE_STATE_DIR": "/home/you/.claude/channels/voice-beta"
      }
    }
    ```
 
-3. **Run `/voice:configure`** inside that Claude Code session — it picks up `VOICE_STATE_DIR`
+   Use a different path per project (`voice-alpha`, `voice-beta`, …). Claude Code injects `env`
+   into every MCP server it spawns, so the plugin and both skills see it automatically. Without
+   this, all instances share `~/.claude/channels/voice/` and the same `agent_id`.
+
+3. **Run `/voice:configure` once per instance.** The skill picks up `VOICE_STATE_DIR`
    automatically and writes the config to the right place.
 
 ## Troubleshooting
