@@ -30,7 +30,7 @@ jobs:
       - name: Install dispatcher (lean)
         run: |
           pip install --no-deps -e dispatcher
-          pip install pytest pytest-asyncio websockets pyyaml click numpy
+          pip install pytest pytest-asyncio websockets pyyaml click numpy cryptography
 
       - name: Dispatcher tests
         run: python -m pytest -q

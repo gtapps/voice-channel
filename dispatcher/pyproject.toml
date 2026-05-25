@@ -15,6 +15,8 @@ dependencies = [
     "sounddevice>=0.4.6",
     "silero-vad>=5.0",
     "numpy>=1.24",
+    # TLS cert generation
+    "cryptography>=41.0",
     # WebSocket adapter
     "websockets>=12.0",
     # Config / CLI

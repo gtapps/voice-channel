@@ -21,9 +21,12 @@ from voice_dispatcher.adapters.websocket import WebSocketAdapter
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 def make_adapter(agents: dict) -> WebSocketAdapter:
-    """Build an adapter from a minimal config dict."""
+    """Build an adapter from a minimal config dict (TLS disabled for unit tests)."""
     dispatcher = Dispatcher()
-    config = {"agents": agents, "server": {"host": "127.0.0.1", "port": 7355}}
+    config = {
+        "agents": agents,
+        "server": {"host": "127.0.0.1", "port": 7355, "tls": {"enabled": False}},
+    }
     return WebSocketAdapter(dispatcher, config)
 
 
@@ -128,15 +131,7 @@ def test_stale_finally_does_not_evict_live_connection() -> None:
     adapter._dispatcher.bus.subscribe(AgentDisconnected, disconnected_events.append)
 
     live_ws = _FakeWS()
-    stale_ws = _FakeWS()
     adapter._connections["jarvis"] = live_ws  # type: ignore[assignment]
-
-    # Simulate the stale socket's finally block running:
-    # it checks connections.get("jarvis") is stale_ws → False → should no-op
-    agent_id = "jarvis"
-    if adapter._connections.get(agent_id) is stale_ws:
-        adapter._connections.pop(agent_id, None)
-        adapter._dispatcher.on_disconnected(agent_id, 0, "")
 
     # Live connection must still be registered; no disconnect event emitted
     assert adapter._connections.get("jarvis") is live_ws

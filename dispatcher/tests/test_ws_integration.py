@@ -103,7 +103,8 @@ class IntegrationHarness:
                     "enable_permission_relay": enable_permission_relay,
                 }
             },
-            "server": {"host": "127.0.0.1", "port": port},
+            # TLS disabled for integration tests — plugin connects via plain ws://.
+            "server": {"host": "127.0.0.1", "port": port, "tls": {"enabled": False}},
         }
         self.adapter = WebSocketAdapter(self.dispatcher, cfg)
 
@@ -131,15 +132,18 @@ class IntegrationHarness:
         self._server_thread.start()
         self._loop_ready.wait(timeout=timeout)
 
-        # Write plugin config
+        # Write plugin config — token goes in .env (the token is a credential).
         plugin_cfg = {
             "dispatcher_url": f"ws://127.0.0.1:{self.port}",
-            "token": self.token,
             "agent_id": self.agent_id,
             "enable_permission_relay": False,
         }
         with open(os.path.join(self.data_dir, "config.json"), "w") as f:
             json.dump(plugin_cfg, f)
+        env_path = os.path.join(self.data_dir, ".env")
+        with open(env_path, "w") as f:
+            f.write(f"VOICE_DISPATCHER_TOKEN={self.token}\n")
+        os.chmod(env_path, 0o600)
 
         # Spawn plugin via bun (same runtime as the packaged plugin)
         self.proc = subprocess.Popen(

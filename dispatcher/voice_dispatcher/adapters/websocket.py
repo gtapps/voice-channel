@@ -16,15 +16,52 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import ssl
+from pathlib import Path
 from typing import Optional
 
 from ..core.handlers import Dispatcher
 from ..core.models import TranscriptDispatched, PermissionVerdict, SpeakCompleted
 from ..core.session import AgentConfig, SessionRegistry
+from .. import tls as _tls
 
 logger = logging.getLogger(__name__)
 
 PROTOCOL_VERSION = 1
+
+
+def _tls_enabled(config: dict) -> bool:
+    """TLS is on by default; explicitly set server.tls.enabled: false to disable."""
+    return config.get("server", {}).get("tls", {}).get("enabled", True)
+
+
+def _build_ssl_context(config: dict) -> Optional[ssl.SSLContext]:
+    """
+    Return an SSLContext when TLS is enabled, None otherwise.
+    Raises RuntimeError with a clear message if cert/key are missing or unreadable.
+    The adapter only *loads* the cert — provisioning is the caller's job (run / add-agent).
+    """
+    if not _tls_enabled(config):
+        return None
+
+    tls_cfg = config.get("server", {}).get("tls", {})
+    cert_file = Path(tls_cfg.get("cert_file", str(_tls.cert_dir() / "dispatcher.crt"))).expanduser()
+    key_file  = Path(tls_cfg.get("key_file",  str(_tls.cert_dir() / "dispatcher.key"))).expanduser()
+
+    for p, label in [(cert_file, "cert"), (key_file, "key")]:
+        if not p.exists():
+            raise RuntimeError(
+                f"TLS is enabled but {label} not found at {p}.\n"
+                "Run: voice-dispatcher config add-agent <id> ... (auto-provisions the cert)\n"
+                "or:  voice-dispatcher tls fingerprint"
+            )
+
+    ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+    try:
+        ctx.load_cert_chain(str(cert_file), str(key_file))
+    except ssl.SSLError as exc:
+        raise RuntimeError(f"Failed to load TLS cert/key: {exc}") from exc
+    return ctx
 
 
 class WebSocketAdapter:
@@ -88,8 +125,10 @@ class WebSocketAdapter:
         host = server_cfg.get("host", "0.0.0.0")
         port = int(server_cfg.get("port", 7355))
 
-        logger.info("WebSocket server listening on %s:%d", host, port)
-        async with websockets.serve(self._handle_connection, host, port):
+        ssl_ctx = _build_ssl_context(self._config)
+        proto = "wss" if ssl_ctx else "ws"
+        logger.info("WebSocket server listening on %s://%s:%d", proto, host, port)
+        async with websockets.serve(self._handle_connection, host, port, ssl=ssl_ctx):
             await asyncio.Future()  # run forever
 
     # ── Per-connection handler ────────────────────────────────────────────────

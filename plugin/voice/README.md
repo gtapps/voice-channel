@@ -22,7 +22,7 @@ claude plugin marketplace add gtapps/voice-channel   # once
 claude plugin install voice@voice-channel --scope local
 ```
 
-Then configure (writes `~/.claude/channels/voice/config.json`):
+Then configure (writes `~/.claude/channels/voice/config.json` and `.env`):
 
 ```
 /voice:configure
@@ -44,8 +44,8 @@ claude --dangerously-load-development-channels plugin:voice@voice-channel
 
 | Skill | Description |
 |---|---|
-| `/voice:configure` | Set dispatcher URL, token, agent ID, and permission-relay opt-in |
-| `/voice:status` | Show connection state, last utterance, and any errors |
+| `/voice:configure` | Set dispatcher URL and pairing string (bundles agent ID, token, and TLS fingerprint); opt-in permission relay |
+| `/voice:status` | Show connection state, TLS, last utterance, and any errors (incl. cert pin failures) |
 
 ## How it works
 
@@ -53,7 +53,8 @@ claude --dangerously-load-development-channels plugin:voice@voice-channel
 Claude Code session
     ↕ stdio MCP
 voice-channel plugin (server.ts)
-    ↕ WebSocket  ws://127.0.0.1:7355  (or ws://laptop.local:7355 for remote/Docker)
+    ↕ WebSocket  wss://127.0.0.1:7355  (TLS + cert-pinned)
+              or wss://192.168.x.y:7355  (remote / Docker)
 voice-dispatcher (Python, on laptop)
     ↕ mic / speaker
 Operator
@@ -73,8 +74,7 @@ Operator
 
 ## Configuration
 
-Config lives at `~/.claude/channels/voice/config.json`. To override, set `VOICE_STATE_DIR` in
-the project's `.claude/settings.local.json` or `.claude/settings.json`:
+State lives at `~/.claude/channels/voice/`. Override with `VOICE_STATE_DIR`:
 
 ```json
 {
@@ -86,16 +86,22 @@ the project's `.claude/settings.local.json` or `.claude/settings.json`:
 
 Claude Code injects `env` into every MCP server it spawns, so the plugin and both skills see it automatically.
 
+**`config.json`** (public config):
 ```json
 {
-  "dispatcher_url": "ws://127.0.0.1:7355",
-  "token": "your-token-here",
+  "dispatcher_url": "wss://127.0.0.1:7355",
   "agent_id": "jarvis",
+  "dispatcher_cert_sha256": "AB:12:CD:...",
   "enable_permission_relay": false
 }
 ```
 
-Run `/voice:configure` to write this file interactively.
+**`.env`** (credential, `chmod 600`):
+```
+VOICE_DISPATCHER_TOKEN=your-token-here
+```
+
+Run `/voice:configure` with the `voicepair_...` string from `voice-dispatcher config add-agent` to write both files interactively.
 
 ## Multiple agents on the same machine
 

@@ -22,10 +22,10 @@ LAPTOP (Linux / macOS / Windows-via-WSL2 — operator's device, mic + speakers)
   voice-dispatcher (Python)
     ├── Silero VAD + faster-whisper-tiny  — local STT, no cloud
     ├── Piper TTS                          — local TTS, no cloud
-    └── WebSocket server :7355 (LAN / 0.0.0.0)
+    └── WebSocket server :7355 (LAN / 0.0.0.0) — wss:// with self-signed cert
 
-          ↕  ws://laptop.local:7355  (home LAN)
-             or ws://<docker-bridge-gateway>:7355  (same host)
+          ↕  wss://laptop.local:7355  (home LAN — TLS + cert-pinned)
+             or wss://<docker-bridge-gateway>:7355  (same host)
 
 TARGET MACHINE (where Claude Code runs — Linux + Docker, or the same laptop)
   Claude Code session
@@ -82,7 +82,8 @@ voice-dispatcher config add-agent jarvis \
   --voice en_US-lessac-medium.onnx
 ```
 
-> The command prints an auth token. **Copy it** — you'll need it in step 6.
+> The command auto-generates a TLS cert (first run only) and prints a **pairing string** like
+> `voicepair_eyJhZ2VudF9pZCI6Imp...`. **Copy it** — you'll paste it into `/voice:configure` in step 6.
 
 ### 4. Start the dispatcher
 
@@ -134,13 +135,14 @@ Boot Claude Code inside the folder your agent and configure the voice plugin:
 /voice:configure
 ```
 
-You will be prompt to answer the following:
+You will be prompted to answer:
 
-| Prompt         | Value                                                                                                              |
-| -------------- | ------------------------------------------------------------------------------------------------------------------ |
-| Dispatcher URL | `ws://127.0.0.1:7355` _(same machine)_ — see [URL table](#dispatcher-url--where-claude-code-runs) for other setups |
-| Token          | The token from step 3                                                                                              |
-| Agent ID       | `jarvis`                                                                                                           |
+| Prompt         | Value                                                                                                                  |
+| -------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| Dispatcher URL | `wss://127.0.0.1:7355` _(same machine)_ — see [URL table](#dispatcher-url--where-claude-code-runs) for other setups   |
+| Pairing string | The `voicepair_...` string printed in step 3 (bundles agent ID, token, and TLS fingerprint in one paste)               |
+
+The skill writes the **bearer token** to `~/.claude/channels/voice/.env` (chmod 600 — it's a credential) and the rest of the config to `config.json`.
 
 <details>
 <summary>Docker (same host): find the bridge-gateway IP</summary>
@@ -151,7 +153,7 @@ When Claude Code runs in a container on the same host as the dispatcher, `localh
 ip route show default | awk '{print $3}'
 ```
 
-Use the result as `ws://<bridge-ip>:7355` (typically `172.17.0.1` or `172.18.0.1`).
+Use the result as `wss://<bridge-ip>:7355` (typically `172.17.0.1` or `172.18.0.1`).
 
 </details>
 
@@ -175,11 +177,11 @@ Say **"hey jarvis, what time is it?"** — Claude should reply aloud.
 The dispatcher binds `0.0.0.0:7355` by default, so the only thing that changes between
 setups is the host in the URL:
 
-| Where Claude Code runs                                | Dispatcher URL                                                                                                                   |
-| ----------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
-| **Same machine** as the dispatcher (no Docker)        | `ws://localhost:7355` (or `ws://127.0.0.1:7355`)                                                                                 |
-| **Separate LAN machine** (typical multi-device setup) | `ws://laptop.local:7355` (mDNS) or `ws://192.168.x.y:7355` (static IP)                                                           |
-| **Docker on the same host** as the dispatcher         | `ws://<bridge-gateway>:7355` — find with the snippet in [step 6](#6-configure-the-plugin); typically `172.17.0.1` / `172.18.0.1` |
+| Where Claude Code runs                                | Dispatcher URL                                                                                                                     |
+| ----------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| **Same machine** as the dispatcher (no Docker)        | `wss://127.0.0.1:7355`                                                                                                             |
+| **Separate LAN machine** (typical multi-device setup) | `wss://192.168.x.y:7355` (static IP) or `wss://laptop.local:7355` (mDNS)                                                          |
+| **Docker on the same host** as the dispatcher         | `wss://<bridge-gateway>:7355` — find with the snippet in [step 6](#6-configure-the-plugin); typically `172.17.0.1` / `172.18.0.1` |
 
 ## Multiple agents on the same machine
 
@@ -218,17 +220,43 @@ apart.
 
 ## Security
 
-The dispatcher binds `0.0.0.0:7355` and authenticates with a bearer token in the `hello` message.
-Trust model: **home LAN is trusted** (WPA2/WPA3 WiFi, no port-forwarding, single-user setup).
+### TLS & pairing
 
-Unlike the official bot channels' per-sender pairing/allowlist, the voice channel authenticates the
-**dispatcher** via a shared token; "who can talk to it" is governed by physical mic access and your
-LAN, not a sender list.
+The dispatcher serves **`wss://`** with a self-signed certificate auto-generated on first run. The
+plugin **pins the dispatcher's SHA-256 cert fingerprint** before sending its bearer token — so the
+token is never transmitted to an impersonator occupying the same host/port.
 
-Upgrade paths (not v1, see [PROTOCOL.md](PROTOCOL.md)):
+Identity is split:
+- **Cert** (shared, per-dispatcher) — answers _"is this the real dispatcher?"_
+- **Token** (per-agent, secret) — answers _"which agent is this?"_
 
-- WSS with self-signed cert + fingerprint pinning
-- Tailscale/WireGuard tunnel between laptop and agent PC
+The token is stored in `~/.claude/channels/voice/.env` at `chmod 600` (it's a credential). The
+fingerprint is stored in `config.json` (it's public).
+
+**How pairing works:**
+1. `voice-dispatcher config add-agent <id> ...` → auto-provisions cert, prints one `voicepair_...` string
+2. Paste it into `/voice:configure` → decoded by Bun, writes `.env` + `config.json`
+3. On connect, the plugin runs a TLS preflight, compares the fingerprint, and only opens the real
+   WebSocket (and sends the token) on a match
+
+**What pinning protects against:** passive eavesdropping and ordinary dispatcher
+impersonation/misdirection — your token is not sent if the fingerprint doesn't match.
+
+**What it does not protect against:** a fully active attacker who can swap the cert _between_
+the preflight check and the WebSocket connection (the two are separate TLS sessions — an inherent
+limitation of the Bun/ws approach). For that threat model, add a VPN or Tailscale/WireGuard tunnel.
+
+**Cert management:**
+```bash
+voice-dispatcher tls fingerprint   # print current fingerprint
+voice-dispatcher tls rotate        # replace cert — all agents must re-pair
+voice-dispatcher config rotate-token <id>  # rotate one agent's token (cert unchanged)
+```
+
+### Per-agent bearer token
+
+Each agent gets its own token. Rotating one agent's token (via `config rotate-token`) only
+affects that agent; the shared cert and all other agents keep working.
 
 ### Permission relay (opt-in, OFF by default)
 

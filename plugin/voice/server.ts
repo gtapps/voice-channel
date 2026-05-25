@@ -19,7 +19,9 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { ListToolsRequestSchema, CallToolRequestSchema } from '@modelcontextprotocol/sdk/types.js'
 import { z } from 'zod'
 import WS from 'ws'
-import { readFileSync, writeFileSync, mkdirSync } from 'fs'
+import tls from 'node:tls'
+import { createHash } from 'node:crypto'
+import { readFileSync, writeFileSync, mkdirSync, chmodSync, existsSync } from 'fs'
 import { homedir } from 'os'
 import { join } from 'path'
 
@@ -34,12 +36,96 @@ const STATE_DIR =
 
 const CONFIG_FILE = join(STATE_DIR, 'config.json')
 const STATUS_FILE = join(STATE_DIR, 'status.json')
+const ENV_FILE    = join(STATE_DIR, '.env')
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+function normalizePin(s: string): string {
+  // Strip optional 'sha256:' prefix, colons, spaces, and lowercase → 64 hex chars
+  return s.replace(/^sha256:/i, '').replace(/[:\s]/g, '').toLowerCase()
+}
+
+function verifyPin(url: string, pin: string): Promise<boolean> {
+  // Parse host/port from the URL. Default port is 7355 (voice's dispatcher port),
+  // not TLS's conventional 443.
+  const parsed = new URL(url)
+  const host = parsed.hostname
+  const port = parsed.port ? parseInt(parsed.port, 10) : 7355
+
+  // Do NOT set servername — it is SNI metadata, illegal as an IP literal, and
+  // useless here (the dispatcher serves one cert and we validate by pinning, not
+  // hostname). host already targets the connection; SNI plays no role.
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      sock.destroy()
+      // Timeout = host unreachable/slow → reject (transient) — NOT a pin failure
+      reject(new Error(`TLS preflight timed out connecting to ${host}:${port}`))
+    }, 5_000)
+
+    const sock = tls.connect({ host, port, rejectUnauthorized: false }, () => {
+      clearTimeout(timer)
+      const peerCert = sock.getPeerCertificate(true)
+      const der = peerCert.raw
+      const actual = createHash('sha256').update(der).digest('hex')
+      sock.destroy()
+      // resolve(false) = connected, read cert, hash ≠ pin → permanent pin mismatch
+      // resolve(true)  = connected, read cert, hash = pin → open the real WS
+      resolve(actual === normalizePin(pin))
+    })
+
+    sock.on('error', (err) => {
+      clearTimeout(timer)
+      // Socket error = host down/refused → reject (transient backoff)
+      reject(err)
+    })
+  })
+}
+
+// ── .env loader ───────────────────────────────────────────────────────────────
+// Bearer token lives in <STATE_DIR>/.env — the token is a credential.
+// Mirror discord/telegram channel pattern.
+
+function loadEnvToken(): string | undefined {
+  if (existsSync(ENV_FILE)) {
+    try {
+      chmodSync(ENV_FILE, 0o600) // ensure it stays credential-mode
+      const lines = readFileSync(ENV_FILE, 'utf8').split('\n')
+      for (const line of lines) {
+        const m = line.match(/^VOICE_DISPATCHER_TOKEN=(.+)$/)
+        if (m) {
+          const val = m[1].trim()
+          if (val) return val
+        }
+      }
+    } catch { /* non-fatal — fall through to env var */ }
+  }
+  return undefined
+}
+
+// ── Config schema ─────────────────────────────────────────────────────────────
 
 const ConfigSchema = z.object({
   dispatcher_url: z.string().regex(/^wss?:\/\//, 'dispatcher_url must start with ws:// or wss://'),
-  token: z.string().min(1),
   agent_id: z.string().min(1).default('agent'),
+  dispatcher_cert_sha256: z.string().optional(),
   enable_permission_relay: z.boolean().default(false),
+}).superRefine((val, ctx) => {
+  if (val.dispatcher_url.startsWith('wss://')) {
+    if (!val.dispatcher_cert_sha256) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'dispatcher_cert_sha256 is required when dispatcher_url uses wss://',
+      })
+      return
+    }
+    const normalized = normalizePin(val.dispatcher_cert_sha256)
+    if (!/^[0-9a-f]{64}$/.test(normalized)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'dispatcher_cert_sha256 must be a 64-char hex SHA-256 fingerprint (colons and sha256: prefix are stripped automatically)',
+      })
+    }
+  }
 })
 type Config = z.infer<typeof ConfigSchema>
 
@@ -50,7 +136,7 @@ function loadConfig(): Config {
     const missing = err instanceof Error && (err as NodeJS.ErrnoException).code === 'ENOENT'
     process.stderr.write(
       missing
-        ? `voice: no config at ${CONFIG_FILE}\n  run /voice:configure to set dispatcher URL and token\n`
+        ? `voice: no config at ${CONFIG_FILE}\n  run /voice:configure to set dispatcher URL and pairing string\n`
         : `voice: invalid config at ${CONFIG_FILE}: ${err}\n`,
     )
     process.exit(1)
@@ -58,6 +144,20 @@ function loadConfig(): Config {
 }
 
 const cfg = loadConfig()
+
+// Load token: .env file first, then VOICE_DISPATCHER_TOKEN env var, then exit.
+const token: string = (() => {
+  const fromEnv = loadEnvToken() ?? process.env.VOICE_DISPATCHER_TOKEN
+  if (!fromEnv) {
+    process.stderr.write(
+      `voice: no bearer token found.\n` +
+      `  Expected VOICE_DISPATCHER_TOKEN in ${ENV_FILE}\n` +
+      `  Run /voice:configure with the pairing string from 'voice-dispatcher config add-agent'\n`,
+    )
+    process.exit(1)
+  }
+  return fromEnv
+})()
 
 // ── Status ────────────────────────────────────────────────────────────────────
 
@@ -165,12 +265,43 @@ let reconnectAttempt = 0
 let pingTimer: ReturnType<typeof setInterval> | null = null
 let lastError: string | null = null
 
-function connect(): void {
+async function connect(): Promise<void> {
   if (shuttingDown) return
+
+  // WSS path: run TLS preflight to verify the dispatcher cert before sending the token.
+  if (cfg.dispatcher_url.startsWith('wss://')) {
+    const pin = cfg.dispatcher_cert_sha256! // guaranteed present by superRefine
+
+    let matched: boolean
+    try {
+      matched = await verifyPin(cfg.dispatcher_url, pin)
+    } catch (err) {
+      // Preflight connection error (host down/refused/timeout) — transient, use backoff.
+      lastError = String(err)
+      process.stderr.write(`voice: TLS preflight failed (will retry): ${lastError}\n`)
+      writeStatus({ state: 'disconnected', dispatcher_url: cfg.dispatcher_url, last_error: lastError })
+      reconnectAttempt++
+      const delay = Math.min(1_000 * reconnectAttempt, 30_000)
+      setTimeout(connect, delay)
+      return
+    }
+
+    if (!matched) {
+      // Pin mismatch — permanent misconfiguration. Token was NOT sent. Do not reconnect.
+      const msg = `cert pin mismatch for ${cfg.dispatcher_url} — token was NOT sent. Re-run /voice:configure with the correct pairing string.`
+      process.stderr.write(`voice: ${msg}\n`)
+      writeStatus({ state: 'error', dispatcher_url: cfg.dispatcher_url, last_error: msg })
+      return // no reconnect
+    }
+  }
 
   let ws: WS
   try {
-    ws = new WS(cfg.dispatcher_url)
+    // For wss://, rejectUnauthorized must be false — we pinned manually above.
+    const wsOpts = cfg.dispatcher_url.startsWith('wss://')
+      ? { tls: { rejectUnauthorized: false } }
+      : {}
+    ws = new WS(cfg.dispatcher_url, wsOpts as WS.ClientOptions)
   } catch (err) {
     lastError = String(err)
     process.stderr.write(`voice: failed to create WebSocket: ${lastError}\n`)
@@ -186,7 +317,7 @@ function connect(): void {
     reconnectAttempt = 0
     lastError = null
     writeStatus({ state: 'connected', dispatcher_url: cfg.dispatcher_url })
-    ws.send(JSON.stringify({ v: 1, type: 'hello', agent_id: cfg.agent_id, token: cfg.token }))
+    ws.send(JSON.stringify({ v: 1, type: 'hello', agent_id: cfg.agent_id, token }))
 
     if (pingTimer) clearInterval(pingTimer)
     pingTimer = setInterval(() => {

@@ -2,7 +2,11 @@
 
 Single WebSocket per agent, JSON messages, explicitly versioned.
 
-**Connection URL:** `ws://laptop.local:7355/` (mDNS) or `ws://192.168.x.y:7355/` (LAN IP fallback).
+**Connection URL:** `wss://192.168.x.y:7355/` (LAN IP) or `wss://laptop.local:7355/` (mDNS).
+**Transport:** TLS with a self-signed dispatcher cert. The plugin pins the cert's SHA-256 leaf
+fingerprint via a preflight `tls.connect()` before opening the WebSocket; the `hello` frame and
+bearer token are never sent on a pin mismatch. Plaintext `ws://` is an undocumented escape hatch
+for localhost dev (`server.tls.enabled: false` on the dispatcher).
 **No query string.** The token is sent only in the `hello` message.
 
 ---
@@ -116,3 +120,6 @@ send `ping`; plugin responds with `pong`.
 
 Bump `v` when adding a **breaking** message type or removing a field. Adding optional fields to
 existing message types is non-breaking. The current version is `1`.
+
+TLS (added alongside v1) changes the transport, not the JSON message schema, so it does not
+increment `v`. The `hello` frame and all message types are unchanged.

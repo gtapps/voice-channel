@@ -72,6 +72,12 @@ agents:
 server:
   host: "0.0.0.0"     # LAN-reachable.  Change to a specific interface on multi-NIC laptops.
   port: 7355
+  tls:
+    enabled: true     # TLS on by default.  Set false ONLY for localhost dev/testing.
+    # cert_file and key_file default to ~/.config/voice-dispatcher/tls/dispatcher.{crt,key}
+    # Auto-provisioned on first run of 'voice-dispatcher config add-agent' or 'voice-dispatcher run'.
+    # cert_file: "~/.config/voice-dispatcher/tls/dispatcher.crt"
+    # key_file:  "~/.config/voice-dispatcher/tls/dispatcher.key"
 
 # ── Piper voices ──────────────────────────────────────────────────────────────
 #

@@ -9,6 +9,8 @@ Usage:
 """
 
 from __future__ import annotations
+import base64
+import json
 import os
 import secrets
 import sys
@@ -17,6 +19,8 @@ from typing import Optional
 
 import click
 import yaml
+
+from . import tls as _tls
 
 
 CONFIG_DIR = Path(os.environ.get("VOICE_DISPATCHER_CONFIG_DIR",
@@ -41,6 +45,31 @@ def _generate_token() -> str:
     return secrets.token_urlsafe(32)
 
 
+def _cert_sha256_for_config(cfg: dict) -> str:
+    """
+    Return the SHA-256 fingerprint of the cert the adapter will actually serve.
+    Respects server.tls.cert_file if configured; otherwise uses the default auto-provisioned cert.
+    """
+    cert_file_str = cfg.get("server", {}).get("tls", {}).get("cert_file")
+    if cert_file_str:
+        return _tls.fingerprint_of(Path(cert_file_str).expanduser())
+    return _tls.fingerprint()
+
+
+def _pairing_string(agent_id: str, token: str, cert_sha256: str) -> str:
+    """
+    Encode agent_id + token + cert fingerprint into a single paste-safe string.
+    Decoded by the plugin's /voice:configure skill via Bun's Buffer.from(..., 'base64url').
+    """
+    payload = json.dumps({
+        "agent_id": agent_id,
+        "token": token,
+        "cert_sha256": cert_sha256,
+    }, separators=(",", ":"))
+    encoded = base64.urlsafe_b64encode(payload.encode()).decode().rstrip("=")
+    return f"voicepair_{encoded}"
+
+
 # ── CLI entry-point ───────────────────────────────────────────────────────────
 
 @click.group()
@@ -63,7 +92,10 @@ def config() -> None:
 @click.option("--token", default=None, help="Override token (default: auto-generated)")
 def add_agent(agent_id: str, triggers: str, voice: str,
                language: Optional[str], token: Optional[str]) -> None:
-    """Register a new agent. Prints the token to paste into /voice:configure."""
+    """Register a new agent and print its pairing string for /voice:configure."""
+    # Auto-provision TLS cert if missing (so the pairing string can embed the fingerprint).
+    _tls.ensure()
+
     cfg = _load_config()
     agents = cfg.setdefault("agents", {})
 
@@ -83,11 +115,12 @@ def add_agent(agent_id: str, triggers: str, voice: str,
 
     _save_config(cfg)
 
+    pair = _pairing_string(agent_id, tok, _cert_sha256_for_config(cfg))
     click.echo(f"\n✓ Agent {agent_id!r} registered.")
-    click.echo(f"  Token: {tok}")
-    click.echo(f"\nNow inside that agent's container, run:")
-    click.echo(f"  /voice:configure")
-    click.echo(f"  (use dispatcher URL and the token above)\n")
+    click.echo(f"\nPairing string (paste into /voice:configure):")
+    click.echo(f"  {pair}")
+    click.echo(f"\n  (token: {tok})")
+    click.echo(f"\nInside that agent's container, run /voice:configure\n")
 
 
 @config.command("list")
@@ -108,6 +141,9 @@ def list_agents() -> None:
 @click.argument("agent_id")
 def rotate_token(agent_id: str) -> None:
     """Generate a new token for an agent (invalidates the old one)."""
+    # Auto-provision TLS cert if missing so the pairing string can embed the fingerprint.
+    _tls.ensure()
+
     cfg = _load_config()
     agents = cfg.get("agents", {})
     if agent_id not in agents:
@@ -118,8 +154,12 @@ def rotate_token(agent_id: str) -> None:
     agents[agent_id]["websocket_token"] = tok
     _save_config(cfg)
 
-    click.echo(f"✓ New token for {agent_id!r}: {tok}")
-    click.echo(f"Re-run /voice:configure inside that agent's container with the new token.")
+    pair = _pairing_string(agent_id, tok, _cert_sha256_for_config(cfg))
+    click.echo(f"✓ Token rotated for {agent_id!r}.")
+    click.echo(f"\nNew pairing string (paste into /voice:configure — this agent only):")
+    click.echo(f"  {pair}")
+    click.echo(f"\n  (token: {tok})")
+    click.echo(f"\nOther agents are unaffected (shared cert unchanged).\n")
 
 
 @config.command("remove-agent")
@@ -145,3 +185,31 @@ def list_devices() -> None:
     except ImportError:
         click.echo("sounddevice not installed — cannot list devices.", err=True)
         sys.exit(1)
+
+
+# ── TLS group ─────────────────────────────────────────────────────────────────
+
+@cli.group()
+def tls() -> None:
+    """Manage the dispatcher TLS certificate."""
+
+
+@tls.command("fingerprint")
+def tls_fingerprint() -> None:
+    """Print the SHA-256 fingerprint of the dispatcher cert (auto-provisions if missing)."""
+    _tls.ensure()
+    fp = _tls.fingerprint()
+    click.echo(fp)
+
+
+@tls.command("rotate")
+def tls_rotate() -> None:
+    """Replace the dispatcher cert/key and print the new fingerprint.
+
+    All agents must be re-paired after rotation (run 'config rotate-token <id>'
+    for each agent — that prints a fresh pairing string with the new cert hash).
+    """
+    _tls.generate(force=True)
+    fp = _tls.fingerprint()
+    click.echo(f"✓ New cert fingerprint: {fp}")
+    click.echo("⚠ All agents must re-pair: run 'voice-dispatcher config rotate-token <id>' for each.")
