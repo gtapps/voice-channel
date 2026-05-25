@@ -65,6 +65,12 @@ Operator
 4. Plugin sends a `speak` frame to the dispatcher
 5. Dispatcher synthesises the text with Piper TTS and plays it aloud
 
+## Tools exposed to Claude
+
+| Tool | Purpose |
+|---|---|
+| `reply` | Speak a response. Takes `utterance_id` (from the inbound `<channel source="voice">` notification's `meta`) and `text`; the dispatcher synthesises it with Piper TTS. |
+
 ## Configuration
 
 Config lives at `${CLAUDE_PLUGIN_DATA}/config.json`:

@@ -6,46 +6,29 @@ containers over WebSocket.
 
 ## Requirements
 
-- **macOS laptop** (v1 critical-path): Apple Silicon or Intel, built-in mic or AirPods
-  _(use built-in mic for input — see AirPods note below)_
-- Python 3.11+
-- ~500 MB disk for Whisper weights + Piper voice files
-
-Linux laptop is v1 acceptance-gated (may slip to v1.1 if testing reveals blocking issues).
+- **A laptop with a mic + speakers.** Linux is the confirmed platform; macOS and Windows
+  (via WSL2) should work but are unverified.
+- Python 3.11+, [pipx](https://pipx.pypa.io), and PortAudio (system audio library).
+- ~500 MB disk for the Whisper model + Piper voice files.
 
 ## Install
 
-### macOS (critical-path)
+Install with [pipx](https://pipx.pypa.io) — isolated and reversible with
+`pipx uninstall voice-dispatcher`:
 
 ```bash
-cd dispatcher
-./install-macos.sh
+sudo apt install portaudio19-dev pipewire-bin   # Linux / WSL2  ·  macOS: brew install portaudio
+pipx install "git+https://github.com/gtapps/voice-channel.git#subdirectory=dispatcher"
 ```
 
-On first start, macOS will ask for microphone permission. Click **Allow**.  
-If you missed the dialog: System Settings → Privacy & Security → Microphone → enable voice-dispatcher.
+- **macOS:** on first `voice-dispatcher run`, macOS asks for microphone permission — click
+  **Allow** (or System Settings → Privacy & Security → Microphone → enable your terminal).
+- **Windows:** install [WSL2](https://learn.microsoft.com/windows/wsl/install) and run the Linux
+  steps inside it; mic passthrough needs WSLg (Windows 11, or updated Windows 10).
 
-### Linux laptop (acceptance-gated)
+## Configure & run
 
-```bash
-cd dispatcher
-./install-linux.sh
-```
-
-## Configure
-
-### 1. Edit config.yaml
-
-```bash
-$EDITOR ~/.config/voice-dispatcher/config.yaml
-```
-
-Key settings:
-- `audio.input_device` — leave `null` to use system default (recommended: built-in mic)
-- `audio.output_device` — leave `null` to use system default (AirPods for output is fine)
-- `whisper.model` — `tiny` is the default; `base` improves accuracy at ~2× CPU cost
-
-### 2. Register an agent
+### 1. Register an agent
 
 ```bash
 voice-dispatcher config add-agent jarvis \
@@ -53,18 +36,19 @@ voice-dispatcher config add-agent jarvis \
   --voice en_US-lessac-medium.onnx
 ```
 
-Copy the printed token. Inside the agent's container, run `/voice:configure` with this token.
+This creates `~/.config/voice-dispatcher/config.yaml` and prints a token. Where that agent's
+Claude Code runs, run `/voice:configure` with the token. Each agent is a 3-step recipe:
 
-Adding an agent is a **3-step recipe** — not a one-YAML-line operation:
-1. `voice-dispatcher config add-agent <id> ...` (this command)
-2. `claude plugin install voice@voice-channel --scope local` inside that agent's container
-   (first add the marketplace once: `claude plugin marketplace add gtapps/voice-channel`)
-3. `/voice:configure` inside that agent's container (dispatcher URL + token)
+1. `voice-dispatcher config add-agent <id> ...` (above)
+2. `claude plugin install voice@voice-channel --scope local` where that agent runs
+   (add the marketplace once: `claude plugin marketplace add gtapps/voice-channel`)
+3. `/voice:configure` there (dispatcher URL + token)
 
-### 3. Download a Piper voice
+### 2. Download a Piper voice
 
 ```bash
 VOICES=~/.local/share/voice-dispatcher/voices
+mkdir -p "$VOICES"
 # English (US), medium quality, ~60 MB:
 curl -L -o "$VOICES/en_US-lessac-medium.onnx" \
   https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0/en/en_US/lessac/medium/en_US-lessac-medium.onnx
@@ -74,22 +58,57 @@ curl -L -o "$VOICES/en_US-lessac-medium.onnx.json" \
 
 Browse all voices: https://github.com/rhasspy/piper/blob/master/VOICES.md
 
-### 4. Start
+### 3. Start
 
-**macOS:**
 ```bash
-launchctl kickstart -k gui/$(id -u)/com.gtapps.voice-dispatcher
+voice-dispatcher run                 # foreground; Ctrl-C to stop
+voice-dispatcher run --no-adapter    # audio + core only, no WebSocket (for testing)
 ```
 
-**Linux:**
+Optional audio tuning in `~/.config/voice-dispatcher/config.yaml`:
+- `audio.input_device` / `audio.output_device` — leave `null` for the system default
+- `whisper.model` — `tiny` (default); `base` improves accuracy at ~2× CPU cost
+
+## Run it always-on
+
+Keep the dispatcher running across logins instead of holding a terminal open. Both units point
+at the pipx-installed `voice-dispatcher` on your `PATH`.
+
+**Linux (systemd `--user`):**
 ```bash
-systemctl --user restart voice-dispatcher
+mkdir -p ~/.config/systemd/user
+cat > ~/.config/systemd/user/voice-dispatcher.service <<'EOF'
+[Unit]
+Description=voice-dispatcher
+[Service]
+ExecStart=%h/.local/bin/voice-dispatcher run
+Restart=on-failure
+RestartSec=5
+[Install]
+WantedBy=default.target
+EOF
+systemctl --user daemon-reload
+systemctl --user enable --now voice-dispatcher
 ```
 
-**Standalone (audio + core, no WebSocket — for testing):**
+**macOS (launchd):**
 ```bash
-python -m voice_dispatcher run --no-adapter
+cat > ~/Library/LaunchAgents/com.gtapps.voice-dispatcher.plist <<EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+  <key>Label</key><string>com.gtapps.voice-dispatcher</string>
+  <key>ProgramArguments</key>
+  <array><string>$HOME/.local/bin/voice-dispatcher</string><string>run</string></array>
+  <key>RunAtLoad</key><true/>
+  <key>KeepAlive</key><true/>
+</dict></plist>
+EOF
+launchctl bootstrap "gui/$(id -u)" ~/Library/LaunchAgents/com.gtapps.voice-dispatcher.plist
 ```
+
+> Re-running `bootstrap` after the plist exists errors with _"service already exists"_ — run
+> `launchctl bootout gui/$(id -u) ~/Library/LaunchAgents/com.gtapps.voice-dispatcher.plist` first.
 
 ## CLI reference
 
@@ -142,8 +161,10 @@ tool-permission prompts through voice:
 4. The verdict goes back to Claude. The local terminal dialog is always available
    as a fallback; the voice window times out after 30 s.
 
-**Security:** the mic does not authenticate the speaker. Only enable this if you
-accept that anyone the mic can hear (a TV, a housemate) could approve a tool call.
+**Security:** the mic does not authenticate the speaker, and you approve by *tool name* only —
+step 2 speaks "Bash needs permission", never the command's arguments. Enable it only if you accept
+that anyone the mic can hear could approve a tool call sight-unseen; pair it with `--allowedTools`
+to bound what voice can approve.
 
 ## Laptop sleep
 

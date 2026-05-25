@@ -45,7 +45,7 @@ def _generate_token() -> str:
 
 @click.group()
 def cli() -> None:
-    """voice-dispatcher — ambient voice control for claude-code-hermit."""
+    """voice-dispatcher — ambient voice control for Claude Code."""
 
 
 @cli.group()
