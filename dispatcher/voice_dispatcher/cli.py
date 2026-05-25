@@ -122,6 +122,20 @@ def rotate_token(agent_id: str) -> None:
     click.echo(f"Re-run /voice:configure inside that agent's container with the new token.")
 
 
+@config.command("remove-agent")
+@click.argument("agent_id")
+def remove_agent(agent_id: str) -> None:
+    """Remove a registered agent."""
+    cfg = _load_config()
+    agents = cfg.get("agents", {})
+    if agent_id not in agents:
+        click.echo(f"Error: agent {agent_id!r} not found.", err=True)
+        sys.exit(1)
+    del agents[agent_id]
+    _save_config(cfg)
+    click.echo(f"✓ Agent {agent_id!r} removed.")
+
+
 @cli.command("list-devices")
 def list_devices() -> None:
     """List available audio input/output devices."""

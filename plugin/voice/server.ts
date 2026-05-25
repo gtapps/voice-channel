@@ -24,12 +24,16 @@ import { homedir } from 'os'
 import { join } from 'path'
 
 // ── Config ────────────────────────────────────────────────────────────────────
+// State lives in ~/.claude/channels/voice/ — the Claude Code user-scope channel
+// convention, siblings to discord and telegram. Override with VOICE_STATE_DIR
+// for tests or a non-default install location. Never read CLAUDE_PLUGIN_DATA:
+// that is a CC-managed per-plugin sandbox, not the shared channel state dir.
 
-const DATA_DIR =
-  process.env.CLAUDE_PLUGIN_DATA ?? join(homedir(), '.claude', 'channels', 'voice')
+const STATE_DIR =
+  process.env.VOICE_STATE_DIR ?? join(homedir(), '.claude', 'channels', 'voice')
 
-const CONFIG_FILE = join(DATA_DIR, 'config.json')
-const STATUS_FILE = join(DATA_DIR, 'status.json')
+const CONFIG_FILE = join(STATE_DIR, 'config.json')
+const STATUS_FILE = join(STATE_DIR, 'status.json')
 
 const ConfigSchema = z.object({
   dispatcher_url: z.string().min(1),
@@ -59,7 +63,7 @@ const cfg = loadConfig()
 
 function writeStatus(fields: Record<string, unknown>) {
   try {
-    mkdirSync(DATA_DIR, { recursive: true })
+    mkdirSync(STATE_DIR, { recursive: true })
     writeFileSync(
       STATUS_FILE,
       JSON.stringify({ ...fields, ts: new Date().toISOString() }, null, 2),

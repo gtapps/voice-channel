@@ -145,7 +145,7 @@ class IntegrationHarness:
         self.proc = subprocess.Popen(
             ["bun", str(PLUGIN_ROOT / "server.ts")],
             cwd=str(PLUGIN_ROOT),
-            env={**os.environ, "CLAUDE_PLUGIN_DATA": self.data_dir, "CLAUDE_PLUGIN_ROOT": str(PLUGIN_ROOT)},
+            env={**os.environ, "VOICE_STATE_DIR": self.data_dir, "CLAUDE_PLUGIN_ROOT": str(PLUGIN_ROOT)},
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,

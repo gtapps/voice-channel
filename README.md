@@ -140,15 +140,7 @@ Run `/voice:configure` inside a Claude Code session and answer the prompts:
 When Claude Code runs in a container on the same host as the dispatcher, `localhost` won't reach the host. Find the gateway from inside the container:
 
 ```bash
-python3 -c "
-import struct, socket
-with open('/proc/net/route') as f:
-    for line in f:
-        parts = line.split()
-        if parts[1] == '00000000':
-            print(socket.inet_ntoa(struct.pack('<I', int(parts[2], 16))))
-            break
-"
+ip route show default | awk '{print $3}'
 ```
 
 Use the result as `ws://<bridge-ip>:7355` (typically `172.17.0.1` or `172.18.0.1`).
@@ -190,19 +182,11 @@ Set up an additional agent in three steps:
 
 1. `voice-dispatcher config add-agent <id> --triggers "..." --voice <voice.onnx>` on the laptop
 2. `claude plugin install voice@voice-channel --scope local` inside that agent's container
-3. Write `config.json` with the matching dispatcher URL + token (or run `/voice:configure`)
+3. Write `~/.claude/channels/voice/config.json` with the matching dispatcher URL + token (or run `/voice:configure`)
 
 ## Troubleshooting
 
-| Symptom                                       | Check                                                                                                                                                                                                |
-| --------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `-32000` on plugin start                      | Dispatcher not running, or `config.json` missing/in wrong path. Run `/voice:status` to check. Config must be at `~/.claude/plugins/data/voice-voice-channel/config.json` (not in a `voice/` subdir). |
-| Plugin shows "disconnected" (close code 1006) | Nothing listening at the dispatcher URL. Check dispatcher is running (`lsof -i :7355` on host) and bound to `0.0.0.0`, not `127.0.0.1`.                                                              |
-| No response to voice                          | Dispatcher running but mic not triggering. macOS: check mic permission (System Settings → Privacy → Microphone). Linux: check `systemctl --user status voice-dispatcher` and mic levels.             |
-| mDNS not resolving                            | Use the laptop's LAN IP instead: `ws://192.168.x.y:7355`. Some mesh-router firmware suppresses mDNS.                                                                                                 |
-| AirPods mic has poor accuracy                 | AirPods switch to Bluetooth HFP/SCO when used as a mic. Use the built-in mic for input — see dispatcher/README.md → "AirPods / Bluetooth headset note".                                              |
-| No TTS heard on Linux                         | Headset likely in HFP mode (silent output). Pin it to A2DP and use the built-in mic — see dispatcher/README.md. Ensure `pw-play` is installed (`pipewire-bin`).                                      |
-| Dispatcher says "token mismatch"              | Re-run `/voice:configure` with the correct token, or rotate: `voice-dispatcher config rotate-token jarvis`                                                                                           |
+> Nothing working? Run `/voice:status` inside your Claude Code session — it shows connection state, last utterance, and any errors.
 
 ## Security
 
@@ -238,6 +222,39 @@ All STT and TTS are local — no data leaves your network. However, Silero VAD +
 transcribes **every detected speech segment** before the trigger-match decides whether to forward.
 Non-matching transcripts are discarded immediately and never leave the dispatcher process.
 This is not the same as wake-word spotting (which would only transcribe on a model hit).
+
+## Uninstall
+
+**Stop the dispatcher** (only if you set it up to run on boot):
+
+```bash
+# Linux (systemd)
+systemctl --user disable --now voice-dispatcher
+rm ~/.config/systemd/user/voice-dispatcher.service
+
+# macOS (launchd)
+launchctl unload ~/Library/LaunchAgents/voice-dispatcher.plist
+rm ~/Library/LaunchAgents/voice-dispatcher.plist
+```
+
+**Remove the dispatcher:**
+
+```bash
+pipx uninstall voice-dispatcher
+```
+
+**Remove the plugin** (run where Claude Code runs):
+
+```bash
+claude plugin uninstall voice@voice-channel
+rm -rf ~/.claude/channels/voice/
+```
+
+**Remove downloaded models** (optional — the Piper voice + Whisper model):
+
+```bash
+rm -rf ~/.local/share/voice-dispatcher/
+```
 
 ## Protocol
 

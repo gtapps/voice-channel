@@ -1,15 +1,30 @@
 ---
 name: voice:configure
 description: Configure the voice channel connection — dispatcher URL, token, agent ID, and optional permission-relay opt-in.
+allowed-tools:
+  - Read
+  - Write
+  - Bash(echo *)
+  - Bash(mkdir *)
 ---
 
 # /voice:configure
 
 Configure the voice channel connection inside this agent container.
 
+## Resolve the state dir
+
+Before doing anything, run:
+
+```bash
+echo "${VOICE_STATE_DIR:-$HOME/.claude/channels/voice}"
+```
+
+Use the output as `<STATE_DIR>` for every file path below.
+
 ## What you do
 
-Ask the user for the following values, then write them to `${CLAUDE_PLUGIN_DATA}/config.json`:
+Ask the user for the following values, then write them to `<STATE_DIR>/config.json`:
 
 1. **dispatcher_url** — WebSocket URL of the voice-dispatcher service on the operator's laptop.
    Default: `ws://laptop.local:7355`. If mDNS is not working on their network, they can use the
@@ -33,7 +48,7 @@ Ask the user for the following values, then write them to `${CLAUDE_PLUGIN_DATA}
 
 ## Config file format
 
-Write to `${CLAUDE_PLUGIN_DATA}/config.json`:
+Create `<STATE_DIR>` if it does not exist, then write `<STATE_DIR>/config.json`:
 
 ```json
 {
@@ -52,7 +67,7 @@ plugin inside this container — it does NOT modify the dispatcher's YAML on the
 
 ## Notes
 
-- This skill writes only to `${CLAUDE_PLUGIN_DATA}/config.json` inside this container.
+- This skill writes only to `<STATE_DIR>/config.json` inside this container.
 - To add this agent to the dispatcher, the user must run on their laptop:
   `voice-dispatcher config add-agent <agent_id> --triggers "hey jarvis,jarvis,ó jarvis"`
 - The dispatcher URL accepts both mDNS hostnames and bare IP addresses.

@@ -1,15 +1,28 @@
 ---
 name: voice:status
 description: Report the current state of the voice channel connection, last utterance, and any errors.
+allowed-tools:
+  - Read
+  - Bash(echo *)
 ---
 
 # /voice:status
 
 Report the current state of the voice channel connection.
 
+## Resolve the state dir
+
+First run:
+
+```bash
+echo "${VOICE_STATE_DIR:-$HOME/.claude/channels/voice}"
+```
+
+Use the output as `<STATE_DIR>` for all file paths below.
+
 ## What you do
 
-Read `${CLAUDE_PLUGIN_DATA}/status.json` and `${CLAUDE_PLUGIN_DATA}/config.json` and report:
+Read `<STATE_DIR>/status.json` and `<STATE_DIR>/config.json` and report:
 
 1. **Connection state** — `connecting`, `connected`, or `disconnected` (from `status.json`)
 2. **Dispatcher URL** — from `config.json`, or "not configured" if no config exists

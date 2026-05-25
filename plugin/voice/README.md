@@ -22,7 +22,7 @@ claude plugin marketplace add gtapps/voice-channel   # once
 claude plugin install voice@voice-channel --scope local
 ```
 
-Then configure (writes `${CLAUDE_PLUGIN_DATA}/config.json`):
+Then configure (writes `~/.claude/channels/voice/config.json`):
 
 ```
 /voice:configure
@@ -73,7 +73,7 @@ Operator
 
 ## Configuration
 
-Config lives at `${CLAUDE_PLUGIN_DATA}/config.json`:
+Config lives at `~/.claude/channels/voice/config.json` (overridable via `VOICE_STATE_DIR`):
 
 ```json
 {
@@ -88,24 +88,14 @@ Run `/voice:configure` to write this file interactively.
 
 ## Permission relay
 
-Off by default. When enabled, Claude's tool-permission dialogs are also spoken aloud and the
-operator can answer by voice ("yes abcde" / "no abcde"). The room mic does not authenticate the
-speaker — enable only on a trusted setup. See SKILL.md for the full risk disclosure.
+Off by default. When enabled, tool-permission dialogs are spoken aloud and the operator can answer
+by voice. Enable only on a trusted setup — see [Security → Permission relay](../../README.md#permission-relay-opt-in-off-by-default) in the root README for the full risk model.
 
-## Runtime
-
-**Bun** — same as the official Telegram, Discord, and iMessage channels. Bun transpiles TypeScript natively
-(no tsx/esbuild build step) and its `node_modules` are pure JS, so the plugin is portable across
-OS/arch. The `start` script (`bun install --production --no-summary && bun server.ts`) installs
-deps on first launch; subsequent starts skip install. Bun must be on `PATH` — hermit containers
-include it; otherwise install from https://bun.sh.
-
-## Development
+## Uninstall
 
 ```bash
-# Install deps (creates/updates bun.lock)
-bun install
-
-# Run tests
-bun run test
+claude plugin uninstall voice@voice-channel
+rm -rf ~/.claude/channels/voice/
 ```
+
+To also remove the dispatcher and downloaded models, see [Uninstall](../../README.md#uninstall) in the root README.

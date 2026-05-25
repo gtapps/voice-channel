@@ -95,7 +95,7 @@ async function setup(opts: { enablePermissionRelay?: boolean } = {}): Promise<Se
     cwd: PLUGIN_ROOT,
     env: {
       ...process.env,
-      CLAUDE_PLUGIN_DATA: dataDir,
+      VOICE_STATE_DIR: dataDir,
       CLAUDE_PLUGIN_ROOT: PLUGIN_ROOT,
     },
     stdio: ['pipe', 'pipe', 'pipe'],
