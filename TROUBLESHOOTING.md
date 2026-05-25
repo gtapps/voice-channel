@@ -1,0 +1,11 @@
+# Troubleshooting
+
+| Symptom                                       | Check                                                                                                                                                                                                |
+| --------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `-32000` on plugin start                      | Dispatcher not running, or `config.json` missing. Run `/voice:status` to check. Config must be at `~/.claude/channels/voice/config.json`. Run `/voice:configure` if it does not exist. |
+| Plugin shows "disconnected" (close code 1006) | Nothing listening at the dispatcher URL. Check dispatcher is running (`lsof -i :7355` on host) and bound to `0.0.0.0`, not `127.0.0.1`.                                                              |
+| No response to voice                          | Dispatcher running but mic not triggering. macOS: check mic permission (System Settings → Privacy → Microphone). Linux: check `systemctl --user status voice-dispatcher` and mic levels.             |
+| mDNS not resolving                            | Use the laptop's LAN IP instead: `ws://192.168.x.y:7355`. Some mesh-router firmware suppresses mDNS.                                                                                                 |
+| AirPods mic has poor accuracy                 | AirPods switch to Bluetooth HFP/SCO when used as a mic. Use the built-in mic for input — see [dispatcher/README.md](dispatcher/README.md) → "AirPods / Bluetooth headset note".                     |
+| No TTS heard on Linux                         | Headset likely in HFP mode (silent output). Pin it to A2DP and use the built-in mic — see [dispatcher/README.md](dispatcher/README.md). Ensure `pw-play` is installed (`pipewire-bin`).              |
+| Dispatcher says "token mismatch"              | Re-run `/voice:configure` with the correct token, or rotate: `voice-dispatcher config rotate-token jarvis`                                                                                           |
