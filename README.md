@@ -11,7 +11,7 @@ A Claude Code **[channel plugin](https://code.claude.com/docs/en/channels)**. Th
 Google Home but local, and pointed at your Claude Code instances. Speak a trigger phrase + what
 you want, and Claude replies aloud. Multi-agent routing support across local network & docker.
 
-**Compatibility:** Linux ✅ · macOS & Windows (WSL2) — should work, unverified
+**Compatibility:** Linux ✅ · Windows (WSL2) ✅ _(extra audio setup — see [step 1](#1-install-the-dispatcher))_ · macOS — should work, unverified
 
 ## Architecture
 
@@ -60,6 +60,20 @@ pipx install "git+https://github.com/gtapps/voice-channel.git#subdirectory=dispa
 sudo apt install portaudio19-dev pipewire-bin
 pipx install "git+https://github.com/gtapps/voice-channel.git#subdirectory=dispatcher"
 ```
+
+<details>
+<summary>Windows (WSL2): extra audio + tooling packages</summary>
+
+WSL2 has no native audio server, so sound is routed through WSLg's PulseAudio bridge. On top of
+`portaudio19-dev` above, install pipx (not preinstalled on Ubuntu), the ALSA→PulseAudio plumbing,
+and `unzip` (the Bun installer in [step 5](#5-install-the-plugin) needs it):
+
+```bash
+sudo apt install pipx sox libsox-fmt-pulse libasound2-plugins pulseaudio unzip
+pipx ensurepath   # restart your shell afterwards so pipx-installed commands land on PATH
+```
+
+</details>
 
 ### 2. Download a Piper voice
 
@@ -119,7 +133,16 @@ systemctl --user enable --now voice-dispatcher
 
 ### 5. Install the plugin
 
-Run these **where Claude Code Agent runs** (same laptop, another LAN machine, or a container):
+Run these **where Claude Code Agent runs** (same laptop, another LAN machine, or a container).
+
+The plugin runtime is [Bun](https://bun.sh). If it's not already on `PATH` (e.g. a fresh WSL2 or
+Linux box), install it first — on WSL2 this needs `unzip` from [step 1](#1-install-the-dispatcher):
+
+```bash
+curl -fsSL https://bun.sh/install | bash   # then restart your shell
+```
+
+Then add the plugin:
 
 ```bash
 claude plugin marketplace add gtapps/voice-channel
