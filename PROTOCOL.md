@@ -107,6 +107,7 @@ send `ping`; plugin responds with `pong`.
 
 - Protocol version mismatch: dispatcher closes with code 4000, reason `"unsupported protocol version vN"`.
 - Token failure: dispatcher closes with code 4001, reason `"authentication failed"`.
+- Superseded connection: dispatcher closes the *old* socket with code 4002, reason `"superseded by new connection"`, when the same agent reconnects. The new connection takes over immediately.
 - Unknown message types are silently ignored (forward-compatibility).
 
 ---
