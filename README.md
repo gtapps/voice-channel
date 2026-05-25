@@ -11,7 +11,7 @@ A Claude Code **[channel plugin](https://code.claude.com/docs/en/channels)**. Th
 Google Home but local, and pointed at your Claude Code instances. Speak a trigger phrase + what
 you want, and Claude replies aloud. Multi-agent routing support across local network & docker.
 
-**Compatibility:** Linux ✅ · Windows (WSL2) ✅ _(extra audio setup — see [step 1](#1-install-the-dispatcher))_ · macOS — should work, unverified
+**Compatibility:** Linux ✅ · Windows (WSL2) ✅ · macOS — should work, unverified
 
 ## Architecture
 
@@ -51,25 +51,21 @@ Install the system audio library, then the dispatcher. It stays off until you st
 
 ```bash
 # macOS
-brew install portaudio
+brew install portaudio pipx
 pipx install "git+https://github.com/gtapps/voice-channel.git#subdirectory=dispatcher"
 ```
 
 ```bash
-# Linux / Windows (WSL2)
-sudo apt install portaudio19-dev pipewire-bin
+# Linux
+sudo apt install portaudio19-dev pipewire-bin pipx
 pipx install "git+https://github.com/gtapps/voice-channel.git#subdirectory=dispatcher"
 ```
 
-<details>
-<summary>Windows (WSL2): extra audio + tooling packages</summary>
-
-WSL2 has no native audio server, so sound is routed through WSLg's PulseAudio bridge. On top of
-`portaudio19-dev` above, install pipx (not preinstalled on Ubuntu), the ALSA→PulseAudio plumbing,
-and `unzip` (the Bun installer in [step 5](#5-install-the-plugin) needs it):
 
 ```bash
-sudo apt install pipx sox libsox-fmt-pulse libasound2-plugins pulseaudio unzip
+# Windows (WSL2)
+sudo apt install portaudio19-dev pipewire-bin pipx sox libsox-fmt-pulse libasound2-plugins pulseaudio unzip
+
 pipx ensurepath   # restart your shell afterwards so pipx-installed commands land on PATH
 ```
 
