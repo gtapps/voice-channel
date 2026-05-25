@@ -9,7 +9,7 @@
 
 A Claude Code **[channel plugin](https://code.claude.com/docs/en/channels)**. Think Siri, Alexa, or
 Google Home but local, and pointed at your Claude Code instances. Speak a trigger phrase + what
-you want, and Claude replies aloud.
+you want, and Claude replies aloud. Multi-agent routing support across local network & docker.
 
 **Compatibility:** Linux ✅ · macOS & Windows (WSL2) — should work, unverified
 
