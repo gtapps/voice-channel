@@ -17,7 +17,7 @@ import { createServer } from 'net'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const PLUGIN_ROOT = join(__dirname, '..')
-const NODE = process.execPath
+const BUN = 'bun'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -89,10 +89,9 @@ async function setup(opts: { enablePermissionRelay?: boolean } = {}): Promise<Se
 
   wss.on('connection', ws => clients.push(ws))
 
-  // Spawn MCP server subprocess.
-  // CWD must be PLUGIN_ROOT (has node_modules/tsx) so that `--import tsx` resolves.
-  // In production this is CLAUDE_PLUGIN_DATA after bootstrap.sh's npm install.
-  const proc = spawn(NODE, ['--import', 'tsx', join(PLUGIN_ROOT, 'server.ts')], {
+  // Spawn MCP server subprocess via bun (transpiles TS natively, resolves deps
+  // from PLUGIN_ROOT/node_modules) — the same runtime the packaged plugin uses.
+  const proc = spawn(BUN, [join(PLUGIN_ROOT, 'server.ts')], {
     cwd: PLUGIN_ROOT,
     env: {
       ...process.env,
@@ -359,24 +358,14 @@ describe('permission relay (opt-in)', () => {
   })
 })
 
-describe('bootstrap module resolution', () => {
-  it('node --import tsx resolves from CWD node_modules', () => {
-    // Verifies the bootstrap.sh invariant:
-    //   cd "$PLUGIN_DATA"
-    //   exec node --import tsx "$PLUGIN_ROOT/server.ts"
-    //
-    // Node's ESM loader resolves bare specifiers (including `tsx` in --import)
-    // from CWD's node_modules. When CWD has node_modules with tsx and the
-    // channel deps, everything resolves without any additional NODE_PATH tricks.
-    //
-    // In tests we use PLUGIN_ROOT as a stand-in for PLUGIN_DATA because PLUGIN_ROOT
-    // already has node_modules after `npm install`. In production, PLUGIN_DATA gets
-    // them from bootstrap.sh's `npm install --prefix "$PLUGIN_DATA" "$PLUGIN_ROOT"`.
+describe('runtime: bun resolves channel deps', () => {
+  it('bun resolves the SDK, ws, and zod from node_modules', () => {
+    // The packaged plugin runs `bun server.ts` (via the start script, which
+    // `bun install`s first). This verifies bun resolves the three runtime deps
+    // from PLUGIN_ROOT/node_modules — no tsx/esbuild, no bootstrap step.
     const result = spawnSync(
-      NODE,
+      BUN,
       [
-        '--import', 'tsx',
-        '--input-type=module',
         '--eval',
         [
           "import('@modelcontextprotocol/sdk/server/index.js')",
@@ -387,7 +376,7 @@ describe('bootstrap module resolution', () => {
         ].join(''),
       ],
       {
-        cwd: PLUGIN_ROOT,   // has node_modules — simulates PLUGIN_DATA after npm install
+        cwd: PLUGIN_ROOT,
         timeout: 10_000,
         encoding: 'utf8',
       },

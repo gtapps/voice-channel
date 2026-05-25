@@ -8,14 +8,15 @@ Calls core.route_transcript() directly and asserts:
   - The plugin can call  reply → dispatcher gets a speak frame
   - The core is independently drivable without any audio code.
 
-Requires:  node (with tsx in plugin/voice/node_modules) and the plugin source.
-           The test is auto-skipped if node is not available.
+Requires:  bun and the plugin's node_modules installed (run `bun install` in
+           plugin/voice first). The test is auto-skipped otherwise.
 """
 
 from __future__ import annotations
 import asyncio
 import json
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -32,12 +33,12 @@ from voice_dispatcher.core.session import AgentConfig
 from voice_dispatcher.adapters.websocket import WebSocketAdapter
 
 PLUGIN_ROOT = Path(__file__).parent.parent.parent / "plugin" / "voice"
-NODE = "node"
 
-# Skip if node binary isn't available or plugin deps aren't installed
+# Skip if bun isn't available or the plugin's deps aren't installed.
 pytestmark = pytest.mark.skipif(
-    not (PLUGIN_ROOT / "node_modules" / ".bin" / "tsx").exists(),
-    reason="plugin/voice/node_modules not installed — run npm install there first",
+    shutil.which("bun") is None
+    or not (PLUGIN_ROOT / "node_modules" / "@modelcontextprotocol").exists(),
+    reason="bun not found or plugin/voice/node_modules missing — run `bun install` in plugin/voice",
 )
 
 
@@ -140,9 +141,9 @@ class IntegrationHarness:
         with open(os.path.join(self.data_dir, "config.json"), "w") as f:
             json.dump(plugin_cfg, f)
 
-        # Spawn plugin
+        # Spawn plugin via bun (same runtime as the packaged plugin)
         self.proc = subprocess.Popen(
-            [NODE, "--import", "tsx", str(PLUGIN_ROOT / "server.ts")],
+            ["bun", str(PLUGIN_ROOT / "server.ts")],
             cwd=str(PLUGIN_ROOT),
             env={**os.environ, "CLAUDE_PLUGIN_DATA": self.data_dir, "CLAUDE_PLUGIN_ROOT": str(PLUGIN_ROOT)},
             stdin=subprocess.PIPE,

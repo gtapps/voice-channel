@@ -1,7 +1,19 @@
 #!/bin/bash
-# Install voice-dispatcher on macOS (critical-path).
+# Install voice-dispatcher on macOS (should work; not yet verified).
 # Requires Homebrew.  Run once as the operator user.
+# Usage:  ./install-macos.sh            # install only (run in the foreground)
+#         ./install-macos.sh --daemon   # also register an always-on LaunchAgent
 set -euo pipefail
+
+# --daemon: also register a launchd LaunchAgent that starts at login.
+# Default: install only — run in the foreground with `voice-dispatcher run`.
+INSTALL_DAEMON=false
+for arg in "$@"; do
+  case "$arg" in
+    --daemon) INSTALL_DAEMON=true ;;
+    *) echo "Unknown option: $arg (use --daemon for an always-on service)" >&2; exit 1 ;;
+  esac
+done
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 VENV_DIR="$HOME/.local/share/voice-dispatcher/venv"
@@ -41,16 +53,17 @@ if [ ! -f "$CONFIG_DIR/config.yaml" ]; then
   echo "--> config written to $CONFIG_DIR/config.yaml  (edit before starting)"
 fi
 
-# LaunchAgent
-mkdir -p "$LOG_DIR"
-sed \
-  -e "s|VENV_PYTHON_PLACEHOLDER|$VENV_DIR/bin/python|g" \
-  -e "s|REPLACE_LOG_DIR|$LOG_DIR|g" \
-  "$PLIST_SRC" > "$PLIST_DST"
-echo "--> LaunchAgent written to $PLIST_DST"
-
-launchctl bootstrap "gui/$(id -u)" "$PLIST_DST" 2>/dev/null || true
-echo "--> loaded with launchctl"
+# LaunchAgent (only with --daemon)
+if $INSTALL_DAEMON; then
+  mkdir -p "$LOG_DIR"
+  sed \
+    -e "s|VENV_PYTHON_PLACEHOLDER|$VENV_DIR/bin/python|g" \
+    -e "s|REPLACE_LOG_DIR|$LOG_DIR|g" \
+    "$PLIST_SRC" > "$PLIST_DST"
+  echo "--> LaunchAgent written to $PLIST_DST"
+  launchctl bootstrap "gui/$(id -u)" "$PLIST_DST" 2>/dev/null || true
+  echo "--> loaded with launchctl"
+fi
 
 echo ""
 echo "✓ voice-dispatcher installed."
@@ -61,6 +74,14 @@ echo "  dialog.  Click 'Allow'.  If you missed it:"
 echo "  System Settings → Privacy & Security → Microphone → enable voice-dispatcher"
 echo ""
 echo "Next steps:"
-echo "  1. Edit $CONFIG_DIR/config.yaml"
-echo "  2. voice-dispatcher config add-agent jarvis --triggers 'hey jarvis,agent' --voice en_US-lessac-medium.onnx"
-echo "  3. Restart: launchctl kickstart -k gui/$(id -u)/com.gtapps.voice-dispatcher"
+echo "  1. Register an agent (prints a token for /voice:configure):"
+echo "     $VENV_DIR/bin/voice-dispatcher config add-agent jarvis --triggers 'hey jarvis,agent' --voice en_US-lessac-medium.onnx"
+echo "  2. Download a Piper .onnx voice into the voices dir (see README)."
+if $INSTALL_DAEMON; then
+  echo "  3. (Re)start the service: launchctl kickstart -k gui/$(id -u)/com.gtapps.voice-dispatcher"
+else
+  echo "  3. Run it (foreground, Ctrl-C to stop):"
+  echo "     $VENV_DIR/bin/voice-dispatcher run"
+  echo ""
+  echo "  Want always-on instead? Re-run: ./install-macos.sh --daemon"
+fi

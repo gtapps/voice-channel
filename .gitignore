@@ -12,5 +12,6 @@ node_modules/
 # Data dirs created at runtime
 /dispatcher/.venv/
 
-# Local MCP config — not committed
-.mcp.json
+# Local dev MCP config at repo root — not committed.
+# Scoped to root so it never shadows the plugin's own plugin/voice/.mcp.json.
+/.mcp.json

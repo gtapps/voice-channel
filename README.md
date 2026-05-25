@@ -1,24 +1,19 @@
 # voice-channel
 
-![Downloads](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/<OWNER>/<REPO>/_gh_traffic_stats/.github/badges/downloads.json)
-![Views](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/<OWNER>/<REPO>/_gh_traffic_stats/.github/badges/views.json)
+![Downloads](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/gtapps/voice-channel/_gh_traffic_stats/.github/badges/clones.json)
+![Views](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/gtapps/voice-channel/_gh_traffic_stats/.github/badges/views.json)
 
-Ambient voice control for **any Claude Code instance**. Speak to your agents from
-anywhere in the room. Originally built for
-[claude-code-hermit](https://github.com/gtapps/claude-code-hermit) — long-running
-agents in Docker — but the plugin is a generic channel and works in any Claude Code
-session (containerized or not).
+A Claude Code **[channel plugin](https://code.claude.com/docs/en/channels)** - Voice control for **any Claude Code instance**. Speak to your agents from
+anywhere in the room.
 
-Throughout these docs, **"agent"** means a Claude Code session you talk to by voice;
-each one is registered with the dispatcher under an `agent_id` and its own trigger
-phrases.
+**Compatibility:** Linux ✅ · macOS & Windows (WSL2) — should work, unverified
 
 ## Architecture
 
 Two components, one protocol:
 
 ```
-LAPTOP (macOS or Linux — operator's device, has AirPods / built-in mic)
+LAPTOP (Linux / macOS / Windows-via-WSL2 — operator's device, mic + speakers)
   voice-dispatcher (Python)
     ├── Silero VAD + faster-whisper-tiny  — local STT, no cloud
     ├── Piper TTS                          — local TTS, no cloud
@@ -29,25 +24,38 @@ LAPTOP (macOS or Linux — operator's device, has AirPods / built-in mic)
 
 TARGET MACHINE (where Claude Code runs — Linux + Docker, or the same laptop)
   Claude Code session
-    └── voice-channel plugin (TypeScript / Node)
+    └── voice-channel plugin (TypeScript / Bun)
           └── MCP channel server ↔ dispatcher WebSocket
 ```
 
-The dispatcher owns all audio; the plugin is a thin (~200 LOC) WebSocket ↔ MCP bridge.
+The **dispatcher** is the laptop-side service that owns your mic and speakers and routes
+voice to and from your agents; the plugin is a thin (~200 LOC) WebSocket ↔ MCP bridge.
 No audio libraries or Python code enter the Claude Code environment.
 
 ## Install order
 
 ### 1. Install the dispatcher on your laptop
 
+Pick one — both leave the dispatcher off until you start it (step 4).
+
+**A. Quick** — foreground, no background service; best for trying it out:
+
 ```bash
-cd dispatcher
-./install-macos.sh      # macOS (critical-path)
-# or: ./install-linux.sh   (Linux laptop, acceptance-gated)
+sudo apt install portaudio19-dev pipewire-bin   # Linux / WSL2  ·  macOS: brew install portaudio
+pipx install "git+https://github.com/gtapps/voice-channel.git#subdirectory=dispatcher"
 ```
 
-The installer starts the dispatcher as a service (launchd / systemd `--user`)
-with an empty config — you'll restart it in step 4 once an agent is registered.
+Standard tooling, nothing hidden — `pipx uninstall voice-dispatcher` reverses it.
+
+**B. Managed** — one command; sets up a venv + config:
+
+```bash
+git clone https://github.com/gtapps/voice-channel.git && cd voice-channel/dispatcher
+./install-linux.sh       # macOS: ./install-macos.sh  ·  add --daemon for an always-on service
+```
+
+**Windows:** install [WSL2](https://learn.microsoft.com/windows/wsl/install) and follow the
+Linux steps inside it — mic passthrough needs WSLg (Windows 11, or updated Windows 10).
 
 ### 2. Download a Piper voice
 
@@ -74,33 +82,52 @@ voice-dispatcher config add-agent jarvis \
 
 The command prints the token. Copy it — you'll need it in step 6.
 
-### 4. Restart the dispatcher to load the new agent
+### 4. Start the dispatcher
 
 ```bash
-# macOS:
-launchctl kickstart -k gui/$(id -u)/com.gtapps.voice-dispatcher
-# Linux:
-systemctl --user restart voice-dispatcher
-# Or run in the foreground for testing (logs to your terminal):
-#   cd dispatcher && python -m voice_dispatcher run
+voice-dispatcher run     # foreground; Ctrl-C to stop
 ```
 
-Confirm it's listening: `lsof -i :7355` should show a `python` process on `0.0.0.0:7355`.
+Installed with **B** (venv, not pipx)? `voice-dispatcher` isn't on your `PATH` — use the path
+the installer printed (`~/.local/share/voice-dispatcher/venv/bin/voice-dispatcher run`).
 
-### 5. Install the plugin in the agent container
+Ran **B `--daemon`**? It's already running — restart it to load the new agent:
 
-Run these commands **inside the container** (e.g. via `docker exec -it <container> bash`):
+```bash
+launchctl kickstart -k gui/$(id -u)/com.gtapps.voice-dispatcher   # macOS
+systemctl --user restart voice-dispatcher                          # Linux
+```
+
+Confirm it's listening: `lsof -i :7355` shows a `python` process on `0.0.0.0:7355`.
+
+### 5. Install the plugin
+
+Run these where Claude Code runs — the same laptop as the dispatcher, another LAN machine,
+or inside an agent container:
 
 ```bash
 claude plugin marketplace add gtapps/voice-channel
 claude plugin install voice@voice-channel --scope local
 ```
 
+> **Docker:** open a shell in the container first (`docker exec -it <container> bash`), then
+> run the commands there.
+
 ### 6. Configure the plugin
 
-First find the Docker bridge gateway IP — how the container reaches the dispatcher
-on the host (only needed when both run on the same machine; skip if the dispatcher
-is on a separate LAN host):
+**Recommended:** run `/voice:configure` inside a Claude Code session and answer the
+prompts (dispatcher URL, token from step 3, agent ID `jarvis`). It writes `config.json`
+to the correct location automatically — no need to know the data-dir path.
+
+For the dispatcher URL, use `ws://localhost:7355` when the dispatcher and Claude Code run on
+the **same machine**. Other setups (a separate LAN host, or Docker on the same host) use a
+different host — see the [Dispatcher URL table](#dispatcher-url--where-claude-code-runs).
+
+<details>
+<summary>Docker (same host): find the bridge-gateway IP</summary>
+
+When Claude Code runs in a container on the same machine as the dispatcher, `localhost`
+won't reach the host. Find the bridge-gateway IP the container uses to reach it:
 
 ```bash
 # Inside the container:
@@ -115,21 +142,20 @@ with open('/proc/net/route') as f:
 "
 ```
 
-**Recommended:** run `/voice:configure` inside a Claude Code session and answer the
-prompts (dispatcher URL `ws://<bridge-ip>:7355`, token from step 3, agent ID `jarvis`).
-It writes `config.json` to the correct location automatically — no need to know the
-data-dir path.
+Use the result as `ws://<bridge-ip>:7355` (typically `172.17.0.1` or `172.18.0.1`).
+
+</details>
 
 <details>
 <summary>Manual alternative (no session needed)</summary>
 
 ```bash
-# Inside the container. The data dir is derived as {plugin}-{marketplace}:
+# The data dir is derived as {plugin}-{marketplace}:
 DATA_DIR="$HOME/.claude/plugins/data/voice-voice-channel"
 mkdir -p "$DATA_DIR"
 cat > "$DATA_DIR/config.json" <<EOF
 {
-  "dispatcher_url": "ws://<bridge-ip>:7355",
+  "dispatcher_url": "ws://localhost:7355",
   "token": "<token from step 3>",
   "agent_id": "jarvis",
   "enable_permission_relay": false
@@ -147,31 +173,37 @@ subdir, re-run `/voice:configure` instead — it always targets the right place.
 ### 7. Start a Claude Code session with the voice channel
 
 ```bash
-# Inside the container:
 cd /path/to/your/project
 claude --dangerously-load-development-channels plugin:voice@voice-channel
 ```
 
+> **Docker:** run this inside the container (the same shell from step 5).
+
 > This flag is required for community (non-Anthropic-signed) channel plugins.
 > The dispatcher must be running on your laptop before Claude starts.
 
-> **First launch:** `bootstrap.sh` runs `npm install` the first time the MCP
-> server starts (~10s). If Claude Code reports `-32000` on the very first
-> attempt, the install was still finishing — `/plugin` → reconnect, or restart
-> the session, and it connects. Subsequent launches are instant.
+> **Runtime:** the plugin runs on [Bun](https://bun.sh) (same as the official
+> Telegram, Discord, and iMessage channels). Its start script runs `bun install` then
+> `bun server.ts`, so deps install on first launch (fast — pure-JS deps, no
+> compile step). If Claude Code reports `-32000` on the very first start, the
+> install was still finishing — `/plugin` → reconnect, or restart the session.
+> Subsequent launches are instant. Bun must be on `PATH` (hermit containers
+> include it; for a bare Claude Code environment, install from https://bun.sh).
 
 ### 8. Test
 
 Say "hey jarvis, what time is it?" — Claude should reply aloud.
 
-## Dispatcher URL — same host vs separate LAN host
+## Dispatcher URL — where Claude Code runs
 
-| Setup                                                          | URL to use                                                                                                |
-| -------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
-| Dispatcher and agent on the **same machine** (agent in Docker) | `ws://<bridge-gateway>:7355` — find with the Python snippet above; typically `172.17.0.1` or `172.18.0.1` |
-| Dispatcher on a **separate LAN laptop** (typical setup)        | `ws://laptop.local:7355` (mDNS) or `ws://192.168.x.y:7355` (static IP)                                    |
+The dispatcher binds `0.0.0.0:7355` by default, so the only thing that changes between
+setups is the host in the URL:
 
-The dispatcher binds `0.0.0.0:7355` by default so both cases work without config changes.
+| Where Claude Code runs                                | Dispatcher URL                                                                                                                   |
+| ----------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| **Same machine** as the dispatcher (no Docker)        | `ws://localhost:7355` (or `ws://127.0.0.1:7355`)                                                                                 |
+| **Separate LAN machine** (typical multi-device setup) | `ws://laptop.local:7355` (mDNS) or `ws://192.168.x.y:7355` (static IP)                                                           |
+| **Docker on the same host** as the dispatcher         | `ws://<bridge-gateway>:7355` — find with the snippet in [step 6](#6-configure-the-plugin); typically `172.17.0.1` / `172.18.0.1` |
 
 ## Troubleshooting
 
@@ -222,12 +254,10 @@ This is not the same as wake-word spotting (which would only transcribe on a mod
 
 ## Requirements
 
-| Component            | Platform       | Status              |
-| -------------------- | -------------- | ------------------- |
-| voice-dispatcher     | macOS          | v1 critical-path    |
-| voice-dispatcher     | Linux laptop   | v1 acceptance-gated |
-| voice-dispatcher     | Windows laptop | v1 acceptance-gated |
-| voice-channel plugin | Linux + Docker | v1 critical-path    |
+- **Dispatcher (laptop):** Python 3.11+, PortAudio (system audio), a mic + speakers,
+  ~500 MB disk for the Whisper model + one Piper voice.
+- **Plugin (where Claude Code runs):** [Bun](https://bun.sh) on `PATH`, plus network reach
+  to the dispatcher (LAN or localhost).
 
 ## Protocol
 

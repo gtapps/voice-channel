@@ -1,4 +1,4 @@
-#!/usr/bin/env node
+#!/usr/bin/env bun
 /**
  * Voice channel plugin — MCP ↔ WebSocket bridge.
  *

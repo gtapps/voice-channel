@@ -1,6 +1,13 @@
 # voice-channel plugin
 
-Claude Code channel plugin — MCP ↔ WebSocket bridge for the voice-dispatcher service.
+A Claude Code **[channel](https://code.claude.com/docs/en/channels)** — an MCP ↔ WebSocket
+bridge for the voice-dispatcher service. Channels are Claude Code's official way to push
+messages into a running session and reply back through the same path; this is the voice
+counterpart to the official
+[Telegram](https://github.com/anthropics/claude-plugins-official/tree/main/external_plugins/telegram),
+[Discord](https://github.com/anthropics/claude-plugins-official/tree/main/external_plugins/discord),
+and [iMessage](https://github.com/anthropics/claude-plugins-official/tree/main/external_plugins/imessage)
+channels.
 
 Runs inside each agent container. Receives transcribed voice commands from the dispatcher
 on the operator's laptop, delivers them to Claude as channel notifications, and sends Claude's
@@ -81,20 +88,18 @@ speaker — enable only on a trusted setup. See SKILL.md for the full risk discl
 
 ## Runtime
 
-Default: **Node + tsx**. Node is already present in any Claude Code container; `tsx` is installed
-into `${CLAUDE_PLUGIN_DATA}/node_modules` by `bootstrap.sh` on first run.
-
-Bun can be used as a development runtime: `bun server.ts` from the plugin directory.
+**Bun** — same as the official Telegram, Discord, and iMessage channels. Bun transpiles TypeScript natively
+(no tsx/esbuild build step) and its `node_modules` are pure JS, so the plugin is portable across
+OS/arch. The `start` script (`bun install --production --no-summary && bun server.ts`) installs
+deps on first launch; subsequent starts skip install. Bun must be on `PATH` — hermit containers
+include it; otherwise install from https://bun.sh.
 
 ## Development
 
 ```bash
-# Install deps
-npm install
+# Install deps (creates/updates bun.lock)
+bun install
 
 # Run tests
-npm test
-
-# Lint / type-check
-npx tsc --noEmit
+bun run test
 ```

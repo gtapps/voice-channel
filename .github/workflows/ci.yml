@@ -15,14 +15,14 @@ jobs:
         with:
           python-version: "3.12"
 
-      - uses: actions/setup-node@v4
-        with:
-          node-version: "20"
+      - uses: oven-sh/setup-bun@v2
 
-      # Plugin deps first — provides tsx so the dispatcher's WS integration
-      # test runs instead of skipping, plus vitest for the plugin suite.
+      # Plugin deps via bun (the plugin's runtime) — provides node_modules so
+      # the dispatcher's WS integration test, which spawns `bun server.ts`, runs
+      # instead of skipping, and the plugin's own suite can run.
       - name: Install plugin deps
-        run: npm ci --prefix plugin/voice
+        run: bun install
+        working-directory: plugin/voice
 
       # Lean install: the dispatcher's audio libs (faster-whisper, piper-tts,
       # onnxruntime…) are imported lazily, so the test suite runs without them.
@@ -37,5 +37,5 @@ jobs:
         working-directory: dispatcher
 
       - name: Plugin tests
-        run: npm test
+        run: bun run test
         working-directory: plugin/voice

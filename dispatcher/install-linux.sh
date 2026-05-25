@@ -1,7 +1,19 @@
 #!/bin/bash
-# Install voice-dispatcher on a Linux laptop (acceptance-gated alternate).
+# Install voice-dispatcher on a Linux laptop (confirmed / primary platform).
 # Tested on Ubuntu/Debian with PulseAudio or PipeWire.
+# Usage:  ./install-linux.sh            # install only (run in the foreground)
+#         ./install-linux.sh --daemon   # also enable an always-on systemd --user service
 set -euo pipefail
+
+# --daemon: also enable a systemd --user service that starts at login.
+# Default: install only — run in the foreground with `voice-dispatcher run`.
+INSTALL_DAEMON=false
+for arg in "$@"; do
+  case "$arg" in
+    --daemon) INSTALL_DAEMON=true ;;
+    *) echo "Unknown option: $arg (use --daemon for an always-on service)" >&2; exit 1 ;;
+  esac
+done
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 VENV_DIR="$HOME/.local/share/voice-dispatcher/venv"
@@ -43,19 +55,32 @@ if [ ! -f "$CONFIG_DIR/config.yaml" ]; then
   echo "--> config written to $CONFIG_DIR/config.yaml"
 fi
 
-# systemd user service
-mkdir -p "$(dirname "$SERVICE_DST")"
-sed -e "s|VENV_PYTHON_PLACEHOLDER|$VENV_DIR/bin/python|g" \
-    "$SERVICE_SRC" > "$SERVICE_DST"
-systemctl --user daemon-reload
-systemctl --user enable --now voice-dispatcher.service
-echo "--> systemd user service enabled and started"
+# systemd user service (only with --daemon)
+if $INSTALL_DAEMON; then
+  mkdir -p "$(dirname "$SERVICE_DST")"
+  sed -e "s|VENV_PYTHON_PLACEHOLDER|$VENV_DIR/bin/python|g" \
+      "$SERVICE_SRC" > "$SERVICE_DST"
+  systemctl --user daemon-reload
+  systemctl --user enable --now voice-dispatcher.service
+  echo "--> systemd user service enabled and started"
+fi
 
 echo ""
 echo "✓ voice-dispatcher installed."
 echo ""
-echo "Status:  systemctl --user status voice-dispatcher"
-echo "Logs:    journalctl --user -u voice-dispatcher -f"
+echo "Next: register an agent (prints a token for /voice:configure):"
+echo "  $VENV_DIR/bin/voice-dispatcher config add-agent jarvis --triggers 'hey jarvis,agent' --voice en_US-lessac-medium.onnx"
+echo "Then download a Piper .onnx voice into the voices dir (see README)."
+echo ""
+if $INSTALL_DAEMON; then
+  echo "Service status:  systemctl --user status voice-dispatcher"
+  echo "Service logs:    journalctl --user -u voice-dispatcher -f"
+else
+  echo "Run it (foreground, Ctrl-C to stop):"
+  echo "  $VENV_DIR/bin/voice-dispatcher run"
+  echo ""
+  echo "Want always-on instead? Re-run: ./install-linux.sh --daemon"
+fi
 echo ""
 echo "AUDIO ROUTING (Bluetooth headsets, e.g. AirPods):"
 echo "  Using a Bluetooth headset as the MIC forces it into HFP mode (mono"
