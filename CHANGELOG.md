@@ -6,6 +6,8 @@
 
 - **security: in-band cert pinning** — v2 pairing strings now include the dispatcher public cert PEM, and the plugin validates WSS using Bun's TLS `ca` path before sending the bearer token. This removes the previous two-connection fingerprint preflight and closes the token-leak TOCTOU window.
 - **plugin: v2 config** — secure `wss://` configs now require `dispatcher_cert_pem` plus matching `dispatcher_cert_sha256`; legacy fingerprint-only configs fail closed with re-pair guidance.
+- **dispatcher: auth failure logging** — token rejection now logs the claimed agent ID so operators can diagnose misconfigured agents without enabling debug mode.
+- **plugin: permanent 4001 close** — the plugin no longer retries after a `4001 Unauthorized` close; it writes a clear error with fix instructions to `status.json` and exits cleanly, preventing reconnect storms on bad tokens.
 
 ### Upgrade Instructions
 
