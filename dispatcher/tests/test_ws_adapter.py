@@ -9,6 +9,7 @@ Tests the parts of WebSocketAdapter that are pure logic:
 from __future__ import annotations
 import asyncio
 import json
+import logging
 from typing import Optional
 
 import pytest
@@ -35,6 +36,21 @@ class _FakeWS:
     def __init__(self):
         self.close_code: Optional[int] = 1000
         self.close_reason: str = "test"
+
+
+class _FakeHelloWS(_FakeWS):
+    """Fake WebSocket that yields one hello frame, then records close()."""
+    def __init__(self, msg: dict, remote_address=("203.0.113.10", 54321)):
+        super().__init__()
+        self._raw = json.dumps(msg)
+        self.remote_address = remote_address
+
+    async def recv(self) -> str:
+        return self._raw
+
+    async def close(self, code: int, reason: str) -> None:
+        self.close_code = code
+        self.close_reason = reason
 
 
 # ── #1: token map hardening ───────────────────────────────────────────────────
@@ -78,6 +94,28 @@ def test_valid_token_registered() -> None:
         "jarvis": {"websocket_token": "tok-abc", "triggers": [], "voice": ""},
     })
     assert adapter._token_map["tok-abc"] == "jarvis"
+
+
+@pytest.mark.asyncio
+async def test_invalid_token_log_includes_claimed_agent_and_prefix(caplog) -> None:
+    adapter = make_adapter({
+        "jarvis": {"websocket_token": "correct-token", "triggers": [], "voice": ""},
+    })
+    ws = _FakeHelloWS({
+        "v": 1,
+        "type": "hello",
+        "agent_id": "jarvis",
+        "token": "wrong-token-secret",
+    })
+
+    with caplog.at_level(logging.WARNING, logger="voice_dispatcher.adapters.websocket"):
+        await adapter._handle_connection(ws)
+
+    assert ws.close_code == 4001
+    assert ws.close_reason == "authentication failed"
+    assert "claimed_agent='jarvis'" in caplog.text
+    assert "wrong-to" in caplog.text
+    assert "wrong-token-secret" not in caplog.text
 
 
 # ── #2: stale connection guards ───────────────────────────────────────────────

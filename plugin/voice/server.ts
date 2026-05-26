@@ -367,6 +367,15 @@ async function connect(): Promise<void> {
       last_close_reason: reason.toString(),
     }
     if (lastError !== null) statusFields.last_error = lastError
+
+    if (code === 4001) {
+      permanentConnectFailure = true
+      const msg = `authentication failed for ${cfg.dispatcher_url} — token was rejected. Re-run /voice:configure with a fresh pairing string from the dispatcher.`
+      process.stderr.write(`voice: ${msg}\n`)
+      writeStatus({ ...statusFields, state: 'error', last_error: msg })
+      return
+    }
+
     writeStatus(statusFields)
     if (!shuttingDown) {
       reconnectAttempt++

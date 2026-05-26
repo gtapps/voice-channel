@@ -158,7 +158,13 @@ class WebSocketAdapter:
             if agent_id is None:
                 await ws.close(4001, "authentication failed")
                 remote_ip = ws.remote_address[0] if ws.remote_address else "unknown"
-                logger.warning("rejected connection: invalid token from %s (tok=%.8s…)", remote_ip, token)
+                claimed_agent = msg.get("agent_id", "")
+                logger.warning(
+                    "rejected connection: invalid token from %s (claimed_agent=%r tok=%.8s…)",
+                    remote_ip,
+                    claimed_agent,
+                    token,
+                )
                 return
 
             existing = self._connections.get(agent_id)

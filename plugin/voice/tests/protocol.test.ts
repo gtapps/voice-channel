@@ -382,6 +382,74 @@ describe('dispatcher ping → plugin pong (#9)', () => {
   })
 })
 
+
+describe('auth failure close 4001', () => {
+  it('writes permanent auth error and does not reconnect', async () => {
+    const port = await freePort()
+    const dataDir = mkdtempSync(join(tmpdir(), 'voice-auth-fail-'))
+
+    writeFileSync(
+      join(dataDir, 'config.json'),
+      JSON.stringify({
+        dispatcher_url: `ws://127.0.0.1:${port}`,
+        agent_id: 'test-agent',
+        enable_permission_relay: false,
+      }),
+    )
+    writeFileSync(join(dataDir, '.env'), 'VOICE_DISPATCHER_TOKEN=stale-token\n', { mode: 0o600 })
+
+    let connectionCount = 0
+    const hellos: unknown[] = []
+    const wss = new WebSocketServer({ host: '127.0.0.1', port })
+    await new Promise<void>(res => wss.once('listening', res))
+    wss.on('connection', ws => {
+      connectionCount++
+      ws.on('message', raw => {
+        const msg = JSON.parse(String(raw)) as Record<string, unknown>
+        if (msg.type === 'hello') {
+          hellos.push(msg)
+          ws.close(4001, 'authentication failed')
+        }
+      })
+    })
+
+    const proc = spawn(BUN, [join(PLUGIN_ROOT, 'server.ts')], {
+      cwd: PLUGIN_ROOT,
+      env: { ...process.env, VOICE_STATE_DIR: dataDir, CLAUDE_PLUGIN_ROOT: PLUGIN_ROOT },
+      stdio: ['pipe', 'pipe', 'pipe'],
+    })
+
+    proc.stdin!.write(frame({ jsonrpc: '2.0', id: 1, method: 'initialize',
+      params: { protocolVersion: '2024-11-05', capabilities: {}, clientInfo: { name: 'test', version: '0' } } }))
+
+    const status = await new Promise<Record<string, unknown>>((resolve, reject) => {
+      const timeout = setTimeout(() => reject(new Error('auth status never written')), 3_000)
+      const interval = setInterval(() => {
+        try {
+          const st = JSON.parse(readFileSync(join(dataDir, 'status.json'), 'utf8')) as Record<string, unknown>
+          if (st.last_close_code === 4001) {
+            clearTimeout(timeout)
+            clearInterval(interval)
+            resolve(st)
+          }
+        } catch { /* not written yet */ }
+      }, 50)
+    })
+
+    await new Promise(r => setTimeout(r, 1_200))
+
+    expect(hellos).toHaveLength(1)
+    expect(connectionCount).toBe(1)
+    expect(status.state).toBe('error')
+    expect(status.last_close_code).toBe(4001)
+    expect(String(status.last_error ?? '')).toMatch(/token was rejected/i)
+    expect(String(status.last_error ?? '')).toMatch(/voice:configure/i)
+
+    proc.kill(); wss.close()
+    try { rmSync(dataDir, { recursive: true }) } catch { /* ignore */ }
+  }, 20_000)
+})
+
 describe('reply tool: invalid args rejected (#10)', () => {
   let ctx: SetupResult
 
@@ -541,9 +609,8 @@ describe('WSS certificate pinning', () => {
     })
 
     // MCP initialize so server.ts starts up fully
-    const initFrame = Buffer.from(JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'initialize',
-      params: { protocolVersion: '2024-11-05', capabilities: {}, clientInfo: { name: 'test', version: '0' } } }) + '\n')
-    proc.stdin!.write(initFrame)
+    proc.stdin!.write(frame({ jsonrpc: '2.0', id: 1, method: 'initialize',
+      params: { protocolVersion: '2024-11-05', capabilities: {}, clientInfo: { name: 'test', version: '0' } } }))
 
     // Wait up to 5s for a hello
     await new Promise<void>((resolve, reject) => {
@@ -595,9 +662,8 @@ describe('WSS certificate pinning', () => {
       env: { ...process.env, VOICE_STATE_DIR: dataDir, CLAUDE_PLUGIN_ROOT: PLUGIN_ROOT },
       stdio: ['pipe', 'pipe', 'pipe'],
     })
-    const initFrame = Buffer.from(JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'initialize',
-      params: { protocolVersion: '2024-11-05', capabilities: {}, clientInfo: { name: 'test', version: '0' } } }) + '\n')
-    proc.stdin!.write(initFrame)
+    proc.stdin!.write(frame({ jsonrpc: '2.0', id: 1, method: 'initialize',
+      params: { protocolVersion: '2024-11-05', capabilities: {}, clientInfo: { name: 'test', version: '0' } } }))
 
     // Wait 2s — TLS should fail before open, so no hello is sent.
     await new Promise(r => setTimeout(r, 2_000))
@@ -634,9 +700,8 @@ describe('WSS certificate pinning', () => {
       env: { ...process.env, VOICE_STATE_DIR: dataDir, CLAUDE_PLUGIN_ROOT: PLUGIN_ROOT },
       stdio: ['pipe', 'pipe', 'pipe'],
     })
-    const initFrame = Buffer.from(JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'initialize',
-      params: { protocolVersion: '2024-11-05', capabilities: {}, clientInfo: { name: 'test', version: '0' } } }) + '\n')
-    proc.stdin!.write(initFrame)
+    proc.stdin!.write(frame({ jsonrpc: '2.0', id: 1, method: 'initialize',
+      params: { protocolVersion: '2024-11-05', capabilities: {}, clientInfo: { name: 'test', version: '0' } } }))
 
     await new Promise(r => setTimeout(r, 1_000))
 

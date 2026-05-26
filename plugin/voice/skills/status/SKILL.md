@@ -49,6 +49,20 @@ render it prominently as:
 Do NOT treat this as a generic disconnect. It means the plugin detected an
 impersonation attempt or stale pinned certificate and refused to send the bearer token.
 
+### Authentication failure
+
+If `status.json` has `last_close_code: 4001` or `last_error` contains "token was rejected" or
+"authentication failed", render it prominently as:
+
+```
+⚠ Authentication failure — dispatcher rejected this agent token.
+  Fix: on the dispatcher host, run 'voice-dispatcher config rotate-token <agent_id>'
+       and then re-run /voice:configure on this Claude Code host with the new pairing string.
+```
+
+Do NOT keep presenting this as a transient reconnecting state. It means the local plugin config is
+stale or belongs to a different dispatcher agent.
+
 ### Generic disconnect
 
 If `state` is `disconnected` or `error` without a pin-related `last_error`, show
