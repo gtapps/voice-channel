@@ -44,6 +44,24 @@ voice to and from your agents.
 - **Plugin (where Claude Code runs):** Like the official Claude Code Channels Plugins: [Bun](https://bun.sh) on `PATH`, plus network reach
   to the dispatcher (LAN or localhost).
 
+## Installation model: what runs where?
+
+For a single Claude Code session on the same machine, follow the setup straight through. For
+multiple Claude Code sessions, or Claude Code running in another folder/container/machine, keep
+these scopes separate:
+
+| Thing              | Location                                                  | How many times?                               |
+| ------------------ | --------------------------------------------------------- | --------------------------------------------- |
+| `voice-dispatcher` | Machine with mic + speakers                               | Once per audio host                           |
+| Piper voice files  | Same machine as the dispatcher                            | Once per voice                                |
+| Dispatcher agent   | On the dispatcher                                         | Once per Claude Code voice identity           |
+| Claude Code plugin | Each Claude Code environment/project where you want voice | Usually once per project with `--scope local` |
+| `/voice:configure` | Inside each Claude Code session/project                   | Once per instance/config dir                  |
+
+The default plugin state directory is `~/.claude/channels/voice/`. If you run more than one
+Claude Code voice instance on the same machine, give each one a different dispatcher agent ID,
+trigger phrase, and `VOICE_STATE_DIR`; otherwise they will share the same `agent_id` and token.
+
 ## Setup
 
 ### 1. Install the dispatcher
@@ -69,7 +87,7 @@ pipx ensurepath   # restart your shell afterwards so pipx-installed commands lan
 pipx install "git+https://github.com/gtapps/voice-channel.git#subdirectory=dispatcher"
 ```
 
-</details>
+If `voice-dispatcher` is not found after install, run `pipx ensurepath` and restart your shell.
 
 ### 2. Download a Piper voice
 
@@ -93,7 +111,7 @@ voice-dispatcher config add-agent jarvis \
 ```
 
 > The command auto-generates a TLS cert (first run only) and prints a **pairing string** like
-> `voicepair_eyJhZ2VudF9pZCI6Imp...`. **Copy it** — you'll paste it into `/voice:configure` in step 6.
+> `voicepair_eyJhZ2VudF9pZCI6Imp...`. **Copy it** — you'll paste it into `/voice:configure` in step 7.
 
 ### 4. Start the dispatcher
 
@@ -146,7 +164,15 @@ claude plugin marketplace add gtapps/voice-channel
 claude plugin install voice@voice-channel --scope local
 ```
 
-### 6. Configure the plugin
+### 6. Launch Claude Code with voice
+
+```bash
+claude --dangerously-load-development-channels plugin:voice@voice-channel
+```
+
+`voice-channel` is a community plugin so the `--dangerously-load-development-channels` flag is required. Make sure the dispatcher (step 4) is running first.
+
+### 7. Configure the plugin
 
 Inside a Claude Code session, run:
 
@@ -163,6 +189,13 @@ You will be prompted to answer:
 
 The skill writes the **bearer token** to `~/.claude/channels/voice/.env` (chmod 600 — it's a credential) and the rest of the config to `config.json`.
 
+After `/voice:configure`, restart Claude Code with the same channel flag so the MCP server starts
+with the new config:
+
+```bash
+claude --dangerously-load-development-channels plugin:voice@voice-channel
+```
+
 <details>
 <summary>Docker (same host): find the bridge-gateway IP</summary>
 
@@ -175,14 +208,6 @@ ip route show default | awk '{print $3}'
 Use the result as `wss://<bridge-ip>:7355` (typically `172.17.0.1` or `172.18.0.1`).
 
 </details>
-
-### 7. Launch Claude Code with voice
-
-```bash
-claude --dangerously-load-development-channels plugin:voice@voice-channel
-```
-
-`voice-channel` is a community plugin so the `--dangerously-load-development-channels` flag is required. Make sure the dispatcher (step 4) is running first.
 
 ### 8. Test it
 
@@ -199,7 +224,7 @@ setups is the host in the URL:
 | ----------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
 | **Same machine** as the dispatcher (no Docker)        | `wss://127.0.0.1:7355`                                                                                                            |
 | **Separate LAN machine** (typical multi-device setup) | `wss://192.168.x.y:7355` (static IP) or `wss://laptop.local:7355` (mDNS)                                                          |
-| **Docker on the same host** as the dispatcher         | `wss://<bridge-gateway>:7355` — find with the snippet in [step 6](#6-configure-the-plugin); typically `172.17.0.1` / `172.18.0.1` |
+| **Docker on the same host** as the dispatcher         | `wss://<bridge-gateway>:7355` — find with the snippet in [step 7](#7-configure-the-plugin); typically `172.17.0.1` / `172.18.0.1` |
 
 ## Multiple agents on the same machine
 
@@ -232,9 +257,55 @@ apart.
 3. **Run `/voice:configure` once per instance.** The skill picks up `VOICE_STATE_DIR`
    automatically and writes the config to the right place.
 
+### Add voice to another Claude Code folder
+
+If the dispatcher and plugin are already installed, adding voice to another local folder is mostly
+about creating a new dispatcher identity and isolating plugin state:
+
+```bash
+voice-dispatcher config add-agent beta \
+  --triggers "hey beta" \
+  --voice en_US-lessac-medium.onnx
+```
+
+In the second project's `.claude/settings.local.json`:
+
+```json
+{
+  "env": {
+    "VOICE_STATE_DIR": "/home/you/.claude/channels/voice-beta"
+  }
+}
+```
+
+Then start Claude Code in that folder with the voice channel flag, run `/voice:configure`, and paste
+the `voicepair_...` string for `beta`.
+
 ## Troubleshooting
 
 > Nothing working? Run `/voice:status` inside your Claude Code session — it shows connection state, last utterance, and any errors.
+
+First checks:
+
+```bash
+voice-dispatcher config list
+voice-dispatcher run
+```
+
+Then inside Claude Code:
+
+```bash
+/voice:status
+```
+
+Common causes:
+
+- Dispatcher is not running
+- Wrong dispatcher URL for Docker or LAN
+- Stale pairing string after TLS or token rotation
+- Bun is not on `PATH` where Claude Code runs
+
+See [TROUBLESHOOTING.md](TROUBLESHOOTING.md) for deeper diagnostics.
 
 ## Security
 
@@ -295,7 +366,7 @@ The local terminal dialog is always the fallback. See dispatcher/README.md for d
 
 ## Privacy
 
-All STT and TTS are local — no data leaves your network. However, Silero VAD + Whisper-tiny
+All STT and TTS are local — no audio is sent to a cloud service. However, Silero VAD + Whisper-tiny
 transcribes **every detected speech segment** before the trigger-match decides whether to forward.
 Non-matching transcripts are discarded immediately and never leave the dispatcher process.
 This is not the same as wake-word spotting (which would only transcribe on a model hit).
@@ -310,8 +381,8 @@ systemctl --user disable --now voice-dispatcher
 rm ~/.config/systemd/user/voice-dispatcher.service
 
 # macOS (launchd)
-launchctl unload ~/Library/LaunchAgents/voice-dispatcher.plist
-rm ~/Library/LaunchAgents/voice-dispatcher.plist
+launchctl bootout "gui/$(id -u)" ~/Library/LaunchAgents/com.gtapps.voice-dispatcher.plist
+rm ~/Library/LaunchAgents/com.gtapps.voice-dispatcher.plist
 ```
 
 **Remove the dispatcher:**

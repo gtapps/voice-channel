@@ -36,8 +36,8 @@ voice-dispatcher config add-agent jarvis \
   --voice en_US-lessac-medium.onnx
 ```
 
-This creates `~/.config/voice-dispatcher/config.yaml` and prints a token. Where that agent's
-Claude Code runs, run `/voice:configure` with the token. Each agent is a 3-step recipe:
+This creates `~/.config/voice-dispatcher/config.yaml` and prints a `voicepair_...` pairing string. Where that agent's
+Claude Code runs, run `/voice:configure` with the pairing string. Each agent is a 3-step recipe:
 
 1. `voice-dispatcher config add-agent <id> ...` (above)
 2. `claude plugin install voice@voice-channel --scope local` where that agent runs

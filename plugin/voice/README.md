@@ -34,7 +34,7 @@ Then inside the session, configure (writes `~/.claude/channels/voice/config.json
 /voice:configure
 ```
 
-Run `/reload-plugins` after configuring to connect immediately without restarting.
+After configuring, restart Claude Code with the same channel flag so the MCP server starts with the new config.
 
 ## Requirements
 
