@@ -1,6 +1,6 @@
 ---
 name: voice:configure
-description: Configure the voice channel connection — dispatcher URL, pairing string (bundles agent ID, token, and cert fingerprint), and optional permission-relay opt-in.
+description: Configure the voice channel connection — dispatcher URL, pairing string (bundles agent ID, token, and dispatcher certificate), and optional permission-relay opt-in.
 allowed-tools:
   - AskUserQuestion
   - Read
@@ -28,7 +28,7 @@ Use the output as `<STATE_DIR>` for every file path below.
 ## Detect existing config
 
 Check if `<STATE_DIR>/config.json` exists. If it does, read it and record the
-current values for `dispatcher_url`, `agent_id`, `dispatcher_cert_sha256`, and
+current values for `dispatcher_url`, `agent_id`, `dispatcher_cert_sha256`, `dispatcher_cert_pem`, and
 `enable_permission_relay`. Tell the user:
 _"Found existing config — showing current values as defaults."_
 
@@ -72,9 +72,9 @@ questions: [
     header: "Pairing string",
     question: "Paste the pairing string printed by the dispatcher:",
     options: [
-      // Include ONLY if existing config has all three fields (agent_id, dispatcher_cert_sha256)
+      // Include ONLY if existing config has agent_id, dispatcher_cert_sha256, dispatcher_cert_pem
       // AND the .env file has a token:
-      { label: "Keep existing pairing", description: "Leave the current agent ID, token, and cert fingerprint unchanged" },
+      { label: "Keep existing pairing", description: "Leave the current agent ID, token, and dispatcher certificate unchanged" },
       { label: "I don't have the pairing string yet", description: "Run voice-dispatcher config add-agent <id> --triggers '...' --voice <voice.onnx> on the dispatcher first, then re-run /voice:configure." }
     ]
     // User pastes the actual voicepair_... string via Other
@@ -84,7 +84,7 @@ questions: [
 
 Handle the result:
 
-- **"Keep existing pairing"** → keep `agent_id`, `dispatcher_cert_sha256`, and the token in `.env` unchanged
+- **"Keep existing pairing"** → keep `agent_id`, `dispatcher_cert_sha256`, `dispatcher_cert_pem`, and the token in `.env` unchanged
 - **"I don't have the pairing string yet"** → stop here; remind the user to run
   `voice-dispatcher config add-agent <agent_id> --triggers "..."` on their laptop, then re-run `/voice:configure`
 - **Other (typed value starting with `voicepair_`)** → decode it (see below)
@@ -98,11 +98,15 @@ absent in minimal containers and cannot decode url-safe base64):
 bun -e 'process.stdout.write(Buffer.from(process.argv[1].replace(/^voicepair_/,""),"base64url").toString())' "<pairing-string>"
 ```
 
-Parse the JSON output. It contains:
+Parse the JSON output. It must contain:
 
+- `pairing_v` — must be `2`; if missing or not `2`, stop and ask the user to upgrade/re-run `voice-dispatcher config add-agent` or `rotate-token`
 - `agent_id` — the agent's ID on the dispatcher
 - `token` — the bearer token (a credential — write to `.env`, not `config.json`)
 - `cert_sha256` — the dispatcher's TLS cert fingerprint (public — write to `config.json`)
+- `cert_pem` — the dispatcher's public TLS certificate PEM (public — write to `config.json` as `dispatcher_cert_pem`)
+
+Before writing, verify `sha256(DER(cert_pem))` equals `cert_sha256`. Use Bun's `X509Certificate` and `createHash`; if the values disagree, stop and ask for a fresh pairing string.
 
 ## Write `.env` and `config.json`
 
@@ -125,6 +129,7 @@ chmod 600 "<STATE_DIR>/.env"
   "dispatcher_url": "<dispatcher_url>",
   "agent_id": "<agent_id>",
   "dispatcher_cert_sha256": "<cert_sha256>",
+  "dispatcher_cert_pem": "<cert_pem>",
   "enable_permission_relay": <enable_permission_relay>
 }
 ```
@@ -145,9 +150,9 @@ Tell the user:
 - This skill writes the bearer token to `<STATE_DIR>/.env` (chmod 600) and the
   rest of the config to `<STATE_DIR>/config.json`. The token never appears in
   `config.json`.
-- The pairing string bundles `agent_id` + `token` + `cert_sha256` in one
+- The v2 pairing string bundles `agent_id` + `token` + `cert_sha256` + `cert_pem` in one
   paste-safe string. It is printed by `voice-dispatcher config add-agent` on the
-  laptop.
+  laptop. The PEM is public certificate material; the token remains the only secret.
 - To add this agent to the dispatcher, the user must run on their laptop if they
   haven't yet:
   `voice-dispatcher config add-agent <agent_id> --triggers "hey jarvis,jarvis" --voice <voice.onnx>`

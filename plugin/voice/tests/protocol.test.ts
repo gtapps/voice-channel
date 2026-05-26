@@ -457,7 +457,9 @@ describe('bad dispatcher URL rejected at startup (R6)', () => {
 describe('WSS certificate pinning', () => {
   let certPem: string
   let keyPem: string
+  let wrongCertPem: string
   let realPin: string   // correct SHA-256 fingerprint (64 hex chars)
+  let wrongPin: string  // fingerprint for wrongCertPem
   let bogusPin: string  // wrong fingerprint
 
   let _tlsDir: string
@@ -467,23 +469,33 @@ describe('WSS certificate pinning', () => {
     _tlsDir = mkdtempSync(join(tmpdir(), 'voice-wss-certs-'))
     const certPath = join(_tlsDir, 'cert.pem')
     const keyPath  = join(_tlsDir, 'key.pem')
+    const wrongCertPath = join(_tlsDir, 'wrong-cert.pem')
+    const wrongKeyPath  = join(_tlsDir, 'wrong-key.pem')
 
-    const r = spawnSync('openssl', [
-      'req', '-x509', '-newkey', 'rsa:2048',
-      '-keyout', keyPath,
-      '-out', certPath,
-      '-days', '1', '-nodes',
-      '-subj', '/CN=voice-test',
-      '-addext', 'subjectAltName=IP:127.0.0.1,DNS:localhost',
-    ], { encoding: 'utf8', timeout: 15_000 })
-    if (r.status !== 0) throw new Error(`openssl failed: ${r.stderr}`)
+    for (const [outCert, outKey, cn] of [
+      [certPath, keyPath, 'voice-test'],
+      [wrongCertPath, wrongKeyPath, 'wrong-voice-test'],
+    ]) {
+      const r = spawnSync('openssl', [
+        'req', '-x509', '-newkey', 'rsa:2048',
+        '-keyout', outKey,
+        '-out', outCert,
+        '-days', '1', '-nodes',
+        '-subj', `/CN=${cn}`,
+        '-addext', 'subjectAltName=IP:127.0.0.1,DNS:localhost',
+      ], { encoding: 'utf8', timeout: 15_000 })
+      if (r.status !== 0) throw new Error(`openssl failed: ${r.stderr}`)
+    }
 
     certPem = readFileSync(certPath, 'utf8')
     keyPem  = readFileSync(keyPath, 'utf8')
+    wrongCertPem = readFileSync(wrongCertPath, 'utf8')
 
-    // Compute expected pin via X509Certificate.raw (same path as verifyPin in server.ts)
+    // Compute expected pin via X509Certificate.raw (same fingerprint path as server.ts)
     const x509 = new X509Certificate(certPem)
+    const wrongX509 = new X509Certificate(wrongCertPem)
     realPin = createHash('sha256').update(x509.raw).digest('hex')
+    wrongPin = createHash('sha256').update(wrongX509.raw).digest('hex')
     bogusPin = 'a'.repeat(64)
   })
 
@@ -495,7 +507,7 @@ describe('WSS certificate pinning', () => {
     const port = await freePort()
     const dataDir = mkdtempSync(join(tmpdir(), 'voice-wss-match-'))
 
-    // Start WSS server (self-signed cert, plugin connects with rejectUnauthorized:false)
+    // Start WSS server with the cert that the plugin pins in config.
     const httpsServer = createHttpsServer({ cert: certPem, key: keyPem })
     const wss = new WebSocketServer({ server: httpsServer })
     await new Promise<void>(res => httpsServer.listen(port, '127.0.0.1', res))
@@ -516,6 +528,7 @@ describe('WSS certificate pinning', () => {
         dispatcher_url: `wss://127.0.0.1:${port}`,
         agent_id: 'test-agent',
         dispatcher_cert_sha256: realPin,
+        dispatcher_cert_pem: certPem,
         enable_permission_relay: false,
       }),
     )
@@ -547,7 +560,7 @@ describe('WSS certificate pinning', () => {
     try { rmSync(dataDir, { recursive: true }) } catch { /* ignore */ }
   }, 20_000)
 
-  it('does NOT send hello and writes pin error to status.json when pin mismatches', async () => {
+  it('does NOT send hello and writes pin error to status.json when pinned PEM mismatches', async () => {
     const port = await freePort()
     const dataDir = mkdtempSync(join(tmpdir(), 'voice-wss-mismatch-'))
 
@@ -555,15 +568,23 @@ describe('WSS certificate pinning', () => {
     const wss = new WebSocketServer({ server: httpsServer })
     await new Promise<void>(res => httpsServer.listen(port, '127.0.0.1', res))
 
-    let connectionCount = 0
-    wss.on('connection', () => connectionCount++)
+    const hellos: unknown[] = []
+    wss.on('connection', ws => {
+      ws.on('message', raw => {
+        try {
+          const msg = JSON.parse(String(raw))
+          if (msg.type === 'hello') hellos.push(msg)
+        } catch { /* ignore */ }
+      })
+    })
 
     writeFileSync(
       join(dataDir, 'config.json'),
       JSON.stringify({
         dispatcher_url: `wss://127.0.0.1:${port}`,
         agent_id: 'test-agent',
-        dispatcher_cert_sha256: bogusPin,  // wrong pin
+        dispatcher_cert_sha256: wrongPin,
+        dispatcher_cert_pem: wrongCertPem,
         enable_permission_relay: false,
       }),
     )
@@ -578,10 +599,10 @@ describe('WSS certificate pinning', () => {
       params: { protocolVersion: '2024-11-05', capabilities: {}, clientInfo: { name: 'test', version: '0' } } }) + '\n')
     proc.stdin!.write(initFrame)
 
-    // Wait 2s — no connection should arrive, no hello sent
+    // Wait 2s — TLS should fail before open, so no hello is sent.
     await new Promise(r => setTimeout(r, 2_000))
 
-    expect(connectionCount).toBe(0)
+    expect(hellos).toHaveLength(0)
 
     // status.json should reflect the pin error
     const statusPath = join(dataDir, 'status.json')
@@ -594,14 +615,49 @@ describe('WSS certificate pinning', () => {
     try { rmSync(dataDir, { recursive: true }) } catch { /* ignore */ }
   }, 20_000)
 
-  it('exits non-zero at load when wss:// config is missing dispatcher_cert_sha256', () => {
+  it('keeps connection failures retryable instead of treating them as pin failures', async () => {
+    const dataDir = mkdtempSync(join(tmpdir(), 'voice-wss-refused-'))
+    writeFileSync(
+      join(dataDir, 'config.json'),
+      JSON.stringify({
+        dispatcher_url: 'wss://127.0.0.1:9',
+        agent_id: 'test-agent',
+        dispatcher_cert_sha256: realPin,
+        dispatcher_cert_pem: certPem,
+        enable_permission_relay: false,
+      }),
+    )
+    writeFileSync(join(dataDir, '.env'), 'VOICE_DISPATCHER_TOKEN=test-token\n', { mode: 0o600 })
+
+    const proc = spawn(BUN, [join(PLUGIN_ROOT, 'server.ts')], {
+      cwd: PLUGIN_ROOT,
+      env: { ...process.env, VOICE_STATE_DIR: dataDir, CLAUDE_PLUGIN_ROOT: PLUGIN_ROOT },
+      stdio: ['pipe', 'pipe', 'pipe'],
+    })
+    const initFrame = Buffer.from(JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'initialize',
+      params: { protocolVersion: '2024-11-05', capabilities: {}, clientInfo: { name: 'test', version: '0' } } }) + '\n')
+    proc.stdin!.write(initFrame)
+
+    await new Promise(r => setTimeout(r, 1_000))
+
+    const status = JSON.parse(readFileSync(join(dataDir, 'status.json'), 'utf8')) as Record<string, unknown>
+    expect(status.state).toBe('disconnected')
+    expect(String(status.last_error ?? '')).toMatch(/Failed to connect/i)
+    expect(String(status.last_error ?? '')).not.toMatch(/pin mismatch/i)
+
+    proc.kill()
+    try { rmSync(dataDir, { recursive: true }) } catch { /* ignore */ }
+  }, 20_000)
+
+  it('exits non-zero at load when wss:// config is missing dispatcher_cert_pem', () => {
     const dataDir = mkdtempSync(join(tmpdir(), 'voice-wss-nopin-'))
     writeFileSync(
       join(dataDir, 'config.json'),
       JSON.stringify({
         dispatcher_url: 'wss://127.0.0.1:7355',
         agent_id: 'test',
-        // no dispatcher_cert_sha256 — superRefine must reject
+        dispatcher_cert_sha256: bogusPin,
+        // no dispatcher_cert_pem — superRefine must reject legacy v1 config
         enable_permission_relay: false,
       }),
     )
@@ -615,7 +671,36 @@ describe('WSS certificate pinning', () => {
     })
     try { rmSync(dataDir, { recursive: true }) } catch { /* ignore */ }
     expect(result.status, result.stderr).not.toBe(0)
-    expect(result.stderr).toMatch(/dispatcher_cert_sha256/i)
+    expect(result.stderr).toMatch(/dispatcher_cert_pem/i)
+    expect(result.stderr).toMatch(/v2 pairing/i)
+  })
+
+  it('exits non-zero at load when dispatcher_cert_pem and dispatcher_cert_sha256 disagree', () => {
+    const dataDir = mkdtempSync(join(tmpdir(), 'voice-wss-pin-mismatch-'))
+    writeFileSync(
+      join(dataDir, 'config.json'),
+      JSON.stringify({
+        dispatcher_url: 'wss://127.0.0.1:7355',
+        agent_id: 'test',
+        dispatcher_cert_sha256: bogusPin,
+        dispatcher_cert_pem: certPem,
+        enable_permission_relay: false,
+      }),
+    )
+    writeFileSync(join(dataDir, '.env'), 'VOICE_DISPATCHER_TOKEN=tok\n', { mode: 0o600 })
+
+    const result = spawnSync(BUN, [join(PLUGIN_ROOT, 'server.ts')], {
+      cwd: PLUGIN_ROOT,
+      env: { ...process.env, VOICE_STATE_DIR: dataDir, CLAUDE_PLUGIN_ROOT: PLUGIN_ROOT },
+      timeout: 5_000,
+      encoding: 'utf8',
+    })
+    const status = JSON.parse(readFileSync(join(dataDir, 'status.json'), 'utf8')) as Record<string, unknown>
+    try { rmSync(dataDir, { recursive: true }) } catch { /* ignore */ }
+    expect(result.status, result.stderr).not.toBe(0)
+    expect(result.stderr).toMatch(/does not match dispatcher_cert_sha256/i)
+    expect(status.state).toBe('error')
+    expect(String(status.last_error ?? '')).toMatch(/does not match dispatcher_cert_sha256/i)
   })
 })
 

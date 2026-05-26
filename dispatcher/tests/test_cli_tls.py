@@ -91,8 +91,8 @@ def _decode_pairing(pair: str) -> dict:
 
 
 def test_add_agent_emits_pairing_string(runner_env):
-    """add-agent should print a voicepair_... string containing agent_id, token, cert_sha256."""
-    runner, env, _ = runner_env
+    """add-agent should print a v2 voicepair_... string with agent, token, and cert."""
+    runner, env, tmp_path = runner_env
     result = runner.invoke(
         cli,
         ["config", "add-agent", "jarvis",
@@ -112,14 +112,17 @@ def test_add_agent_emits_pairing_string(runner_env):
     assert pair is not None, f"no voicepair_ in output:\n{result.output}"
 
     payload = _decode_pairing(pair)
+    assert payload["pairing_v"] == 2
     assert payload["agent_id"] == "jarvis"
     assert isinstance(payload["token"], str) and len(payload["token"]) > 10
     assert isinstance(payload["cert_sha256"], str)
+    assert payload["cert_pem"].startswith("-----BEGIN CERTIFICATE-----")
+    assert payload["cert_pem"] == (tmp_path / "tls" / "dispatcher.crt").read_text()
 
 
 def test_add_agent_cert_sha256_matches_tls_fingerprint(runner_env):
-    """The cert_sha256 embedded in the pairing string must match 'tls fingerprint'."""
-    runner, env, _ = runner_env
+    """The pairing cert_pem and cert_sha256 must match the served TLS cert."""
+    runner, env, tmp_path = runner_env
     r_add = runner.invoke(
         cli,
         ["config", "add-agent", "jarvis",
@@ -140,6 +143,7 @@ def test_add_agent_cert_sha256_matches_tls_fingerprint(runner_env):
     assert r_fp.exit_code == 0
     # payload cert_sha256 is colon-separated; fingerprint output is also colon-separated
     assert payload["cert_sha256"] == r_fp.output.strip()
+    assert payload["cert_pem"] == (tmp_path / "tls" / "dispatcher.crt").read_text()
 
 
 # ── rotate-token pairing string ───────────────────────────────────────────────
@@ -164,4 +168,6 @@ def test_rotate_token_emits_pairing_string(runner_env):
     )
     assert pair is not None, f"no voicepair_ in output:\n{result.output}"
     payload = _decode_pairing(pair)
+    assert payload["pairing_v"] == 2
     assert payload["agent_id"] == "jarvis"
+    assert payload["cert_pem"].startswith("-----BEGIN CERTIFICATE-----")

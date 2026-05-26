@@ -185,7 +185,7 @@ You will be prompted to answer:
 | Prompt         | Value                                                                                                               |
 | -------------- | ------------------------------------------------------------------------------------------------------------------- |
 | Dispatcher URL | `wss://127.0.0.1:7355` _(same machine)_ — see [URL table](#dispatcher-url--where-claude-code-runs) for other setups |
-| Pairing string | The `voicepair_...` string printed in step 3 (bundles agent ID, token, and TLS fingerprint in one paste)            |
+| Pairing string | The `voicepair_...` string printed in step 3 (bundles agent ID, token, and pinned TLS cert in one paste)            |
 
 The skill writes the **bearer token** to `~/.claude/channels/voice/.env` (chmod 600 — it's a credential) and the rest of the config to `config.json`.
 
@@ -312,8 +312,8 @@ See [TROUBLESHOOTING.md](TROUBLESHOOTING.md) for deeper diagnostics.
 ### TLS & pairing
 
 The dispatcher serves **`wss://`** with a self-signed certificate auto-generated on first run. The
-plugin **pins the dispatcher's SHA-256 cert fingerprint** before sending its bearer token — so the
-token is never transmitted to an impersonator occupying the same host/port.
+plugin **pins the dispatcher's public certificate PEM in-band** before sending its bearer token — so
+the token is never transmitted to an impersonator occupying the same host/port.
 
 Identity is split:
 
@@ -321,21 +321,19 @@ Identity is split:
 - **Token** (per-agent, secret) — answers _"which agent is this?"_
 
 The token is stored in `~/.claude/channels/voice/.env` at `chmod 600` (it's a credential). The
-fingerprint is stored in `config.json` (it's public).
+cert PEM and fingerprint are stored in `config.json` (they are public certificate material).
 
 **How pairing works:**
 
 1. `voice-dispatcher config add-agent <id> ...` → auto-provisions cert, prints one `voicepair_...` string
 2. Paste it into `/voice:configure` → decoded by Bun, writes `.env` + `config.json`
-3. On connect, the plugin runs a TLS preflight, compares the fingerprint, and only opens the real
-   WebSocket (and sends the token) on a match
+3. On connect, the plugin opens one WSS connection that trusts only the pinned cert PEM and sends
+   the token only after that TLS handshake succeeds
 
-**What pinning protects against:** passive eavesdropping and ordinary dispatcher
-impersonation/misdirection — your token is not sent if the fingerprint doesn't match.
-
-**What it does not protect against:** a fully active attacker who can swap the cert _between_
-the preflight check and the WebSocket connection (the two are separate TLS sessions — an inherent
-limitation of the Bun/ws approach). For that threat model, add a VPN or Tailscale/WireGuard tunnel.
+**What pinning protects against:** passive eavesdropping and dispatcher
+impersonation/misdirection — your token is not sent unless the WSS handshake validates against the
+pinned cert. The plugin pins cert identity directly and intentionally ignores hostname matching so
+localhost, LAN IP, mDNS, and Docker bridge URLs can share the same dispatcher cert.
 
 **Cert management:**
 

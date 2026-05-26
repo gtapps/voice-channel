@@ -41,14 +41,13 @@ render it prominently as:
 
 ```
 ⚠ Certificate pin failure — token was NOT sent to the dispatcher.
-  The dispatcher's TLS certificate does not match the pinned fingerprint.
+  The dispatcher's TLS certificate does not match the pinned certificate.
   Fix: re-run /voice:configure with the correct pairing string from the dispatcher.
-       (Run 'voice-dispatcher tls fingerprint' on the laptop to get the current fingerprint,
-        or 'voice-dispatcher config rotate-token <id>' to generate a new pairing string.)
+       (Run 'voice-dispatcher config rotate-token <id>' to generate a fresh v2 pairing string.)
 ```
 
 Do NOT treat this as a generic disconnect. It means the plugin detected an
-impersonation attempt or stale fingerprint and refused to send the bearer token.
+impersonation attempt or stale pinned certificate and refused to send the bearer token.
 
 ### Generic disconnect
 
@@ -87,6 +86,6 @@ State:            error
 Dispatcher:       wss://192.168.1.50:7355
 
 ⚠ Certificate pin failure — token was NOT sent to the dispatcher.
-  The dispatcher's TLS certificate does not match the pinned fingerprint.
+  The dispatcher's TLS certificate does not match the pinned certificate.
   Fix: re-run /voice:configure with the correct pairing string from the dispatcher.
 ```

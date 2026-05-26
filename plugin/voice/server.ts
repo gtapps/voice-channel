@@ -19,8 +19,7 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { ListToolsRequestSchema, CallToolRequestSchema } from '@modelcontextprotocol/sdk/types.js'
 import { z } from 'zod'
 import WS from 'ws'
-import tls from 'node:tls'
-import { createHash } from 'node:crypto'
+import { createHash, X509Certificate } from 'node:crypto'
 import { readFileSync, writeFileSync, mkdirSync, chmodSync, existsSync } from 'fs'
 import { homedir } from 'os'
 import { join } from 'path'
@@ -40,45 +39,24 @@ const ENV_FILE    = join(STATE_DIR, '.env')
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
+function writeStatus(fields: Record<string, unknown>) {
+  try {
+    mkdirSync(STATE_DIR, { recursive: true })
+    writeFileSync(
+      STATUS_FILE,
+      JSON.stringify({ ...fields, ts: new Date().toISOString() }, null, 2),
+    )
+  } catch { /* non-fatal */ }
+}
+
 function normalizePin(s: string): string {
   // Strip optional 'sha256:' prefix, colons, spaces, and lowercase → 64 hex chars
   return s.replace(/^sha256:/i, '').replace(/[:\s]/g, '').toLowerCase()
 }
 
-function verifyPin(url: string, pin: string): Promise<boolean> {
-  // Parse host/port from the URL. Default port is 7355 (voice's dispatcher port),
-  // not TLS's conventional 443.
-  const parsed = new URL(url)
-  const host = parsed.hostname
-  const port = parsed.port ? parseInt(parsed.port, 10) : 7355
-
-  // Do NOT set servername — it is SNI metadata, illegal as an IP literal, and
-  // useless here (the dispatcher serves one cert and we validate by pinning, not
-  // hostname). host already targets the connection; SNI plays no role.
-  return new Promise((resolve, reject) => {
-    const timer = setTimeout(() => {
-      sock.destroy()
-      // Timeout = host unreachable/slow → reject (transient) — NOT a pin failure
-      reject(new Error(`TLS preflight timed out connecting to ${host}:${port}`))
-    }, 5_000)
-
-    const sock = tls.connect({ host, port, rejectUnauthorized: false }, () => {
-      clearTimeout(timer)
-      const peerCert = sock.getPeerCertificate(true)
-      const der = peerCert.raw
-      const actual = createHash('sha256').update(der).digest('hex')
-      sock.destroy()
-      // resolve(false) = connected, read cert, hash ≠ pin → permanent pin mismatch
-      // resolve(true)  = connected, read cert, hash = pin → open the real WS
-      resolve(actual === normalizePin(pin))
-    })
-
-    sock.on('error', (err) => {
-      clearTimeout(timer)
-      // Socket error = host down/refused → reject (transient backoff)
-      reject(err)
-    })
-  })
+function fingerprintPem(certPem: string): string {
+  const x509 = new X509Certificate(certPem)
+  return createHash('sha256').update(x509.raw).digest('hex')
 }
 
 // ── .env loader ───────────────────────────────────────────────────────────────
@@ -108,23 +86,44 @@ const ConfigSchema = z.object({
   dispatcher_url: z.string().regex(/^wss?:\/\//, 'dispatcher_url must start with ws:// or wss://'),
   agent_id: z.string().min(1).default('agent'),
   dispatcher_cert_sha256: z.string().optional(),
+  dispatcher_cert_pem: z.string().optional(),
   enable_permission_relay: z.boolean().default(false),
 }).superRefine((val, ctx) => {
-  if (val.dispatcher_url.startsWith('wss://')) {
-    if (!val.dispatcher_cert_sha256) {
+  if (!val.dispatcher_url.startsWith('wss://')) return
+
+  if (!val.dispatcher_cert_sha256) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'dispatcher_cert_sha256 is required when dispatcher_url uses wss://. Re-run /voice:configure with a v2 pairing string.',
+    })
+  } else if (!/^[0-9a-f]{64}$/.test(normalizePin(val.dispatcher_cert_sha256))) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'dispatcher_cert_sha256 must be a 64-char hex SHA-256 fingerprint (colons and sha256: prefix are stripped automatically)',
+    })
+  }
+
+  if (!val.dispatcher_cert_pem) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'dispatcher_cert_pem is required when dispatcher_url uses wss://. Re-run /voice:configure with a v2 pairing string.',
+    })
+    return
+  }
+
+  try {
+    const actual = fingerprintPem(val.dispatcher_cert_pem)
+    if (val.dispatcher_cert_sha256 && actual !== normalizePin(val.dispatcher_cert_sha256)) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
-        message: 'dispatcher_cert_sha256 is required when dispatcher_url uses wss://',
-      })
-      return
-    }
-    const normalized = normalizePin(val.dispatcher_cert_sha256)
-    if (!/^[0-9a-f]{64}$/.test(normalized)) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: 'dispatcher_cert_sha256 must be a 64-char hex SHA-256 fingerprint (colons and sha256: prefix are stripped automatically)',
+        message: 'dispatcher_cert_pem does not match dispatcher_cert_sha256. Re-run /voice:configure with a fresh pairing string.',
       })
     }
+  } catch (err) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: `dispatcher_cert_pem is not a valid certificate PEM: ${err}`,
+    })
   }
 })
 type Config = z.infer<typeof ConfigSchema>
@@ -134,11 +133,11 @@ function loadConfig(): Config {
     return ConfigSchema.parse(JSON.parse(readFileSync(CONFIG_FILE, 'utf8')))
   } catch (err) {
     const missing = err instanceof Error && (err as NodeJS.ErrnoException).code === 'ENOENT'
-    process.stderr.write(
-      missing
-        ? `voice: no config at ${CONFIG_FILE}\n  run /voice:configure to set dispatcher URL and pairing string\n`
-        : `voice: invalid config at ${CONFIG_FILE}: ${err}\n`,
-    )
+    const msg = missing
+      ? `voice: no config at ${CONFIG_FILE}\n  run /voice:configure to set dispatcher URL and pairing string`
+      : `voice: invalid config at ${CONFIG_FILE}: ${err}`
+    process.stderr.write(`${msg}\n`)
+    writeStatus({ state: 'error', last_error: msg })
     process.exit(1)
   }
 }
@@ -159,25 +158,13 @@ const token: string = (() => {
   return fromEnv
 })()
 
-// ── Status ────────────────────────────────────────────────────────────────────
-
-function writeStatus(fields: Record<string, unknown>) {
-  try {
-    mkdirSync(STATE_DIR, { recursive: true })
-    writeFileSync(
-      STATUS_FILE,
-      JSON.stringify({ ...fields, ts: new Date().toISOString() }, null, 2),
-    )
-  } catch { /* non-fatal */ }
-}
-
 // ── MCP server ────────────────────────────────────────────────────────────────
 
 const experimental: Record<string, object> = { 'claude/channel': {} }
 if (cfg.enable_permission_relay) experimental['claude/channel/permission'] = {}
 
 const mcp = new Server(
-  { name: 'voice', version: '0.0.1' },
+  { name: 'voice', version: '0.0.2' },
   {
     capabilities: { tools: {}, experimental },
     instructions: [
@@ -264,42 +251,23 @@ let shuttingDown = false
 let reconnectAttempt = 0
 let pingTimer: ReturnType<typeof setInterval> | null = null
 let lastError: string | null = null
+let permanentConnectFailure = false
 
 async function connect(): Promise<void> {
-  if (shuttingDown) return
-
-  // WSS path: run TLS preflight to verify the dispatcher cert before sending the token.
-  if (cfg.dispatcher_url.startsWith('wss://')) {
-    const pin = cfg.dispatcher_cert_sha256! // guaranteed present by superRefine
-
-    let matched: boolean
-    try {
-      matched = await verifyPin(cfg.dispatcher_url, pin)
-    } catch (err) {
-      // Preflight connection error (host down/refused/timeout) — transient, use backoff.
-      lastError = String(err)
-      process.stderr.write(`voice: TLS preflight failed (will retry): ${lastError}\n`)
-      writeStatus({ state: 'disconnected', dispatcher_url: cfg.dispatcher_url, last_error: lastError })
-      reconnectAttempt++
-      const delay = Math.min(1_000 * reconnectAttempt, 30_000)
-      setTimeout(connect, delay)
-      return
-    }
-
-    if (!matched) {
-      // Pin mismatch — permanent misconfiguration. Token was NOT sent. Do not reconnect.
-      const msg = `cert pin mismatch for ${cfg.dispatcher_url} — token was NOT sent. Re-run /voice:configure with the correct pairing string.`
-      process.stderr.write(`voice: ${msg}\n`)
-      writeStatus({ state: 'error', dispatcher_url: cfg.dispatcher_url, last_error: msg })
-      return // no reconnect
-    }
-  }
+  if (shuttingDown || permanentConnectFailure) return
 
   let ws: WS
+  let opened = false
   try {
-    // For wss://, rejectUnauthorized must be false — we pinned manually above.
     const wsOpts = cfg.dispatcher_url.startsWith('wss://')
-      ? { tls: { rejectUnauthorized: false } }
+      ? {
+          tls: {
+            ca: cfg.dispatcher_cert_pem!,
+            rejectUnauthorized: true,
+            // Cert pinning is the identity check; hostnames vary across localhost, LAN, and Docker.
+            checkServerIdentity: () => undefined,
+          },
+        }
       : {}
     ws = new WS(cfg.dispatcher_url, wsOpts as WS.ClientOptions)
   } catch (err) {
@@ -314,6 +282,7 @@ async function connect(): Promise<void> {
   socket = ws
 
   ws.on('open', () => {
+    opened = true
     reconnectAttempt = 0
     lastError = null
     writeStatus({ state: 'connected', dispatcher_url: cfg.dispatcher_url })
@@ -390,6 +359,7 @@ async function connect(): Promise<void> {
   ws.on('close', (code, reason) => {
     socket = null
     if (pingTimer) { clearInterval(pingTimer); pingTimer = null }
+    if (permanentConnectFailure) return
     const statusFields: Record<string, unknown> = {
       state: 'disconnected',
       dispatcher_url: cfg.dispatcher_url,
@@ -408,6 +378,13 @@ async function connect(): Promise<void> {
 
   ws.on('error', err => {
     lastError = err.message
+    if (cfg.dispatcher_url.startsWith('wss://') && !opened && err.message.includes('TLS handshake failed')) {
+      permanentConnectFailure = true
+      const msg = `cert pin mismatch for ${cfg.dispatcher_url} — token was NOT sent. Re-run /voice:configure with the correct pairing string.`
+      process.stderr.write(`voice: ${msg}\n`)
+      writeStatus({ state: 'error', dispatcher_url: cfg.dispatcher_url, last_error: msg })
+      return
+    }
     process.stderr.write(`voice: WebSocket error: ${err.message}\n`)
   })
 }

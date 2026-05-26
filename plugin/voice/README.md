@@ -46,7 +46,7 @@ After configuring, restart Claude Code with the same channel flag so the MCP ser
 
 | Skill | Description |
 |---|---|
-| `/voice:configure` | Set dispatcher URL and pairing string (bundles agent ID, token, and TLS fingerprint); opt-in permission relay |
+| `/voice:configure` | Set dispatcher URL and pairing string (bundles agent ID, token, and pinned TLS cert); opt-in permission relay |
 | `/voice:status` | Show connection state, TLS, last utterance, and any errors (incl. cert pin failures) |
 
 ## How it works
@@ -94,6 +94,7 @@ Claude Code injects `env` into every MCP server it spawns, so the plugin and bot
   "dispatcher_url": "wss://127.0.0.1:7355",
   "agent_id": "jarvis",
   "dispatcher_cert_sha256": "AB:12:CD:...",
+  "dispatcher_cert_pem": "-----BEGIN CERTIFICATE-----\n...\n-----END CERTIFICATE-----\n",
   "enable_permission_relay": false
 }
 ```

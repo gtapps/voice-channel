@@ -45,26 +45,31 @@ def _generate_token() -> str:
     return secrets.token_urlsafe(32)
 
 
-def _cert_sha256_for_config(cfg: dict) -> str:
-    """
-    Return the SHA-256 fingerprint of the cert the adapter will actually serve.
-    Respects server.tls.cert_file if configured; otherwise uses the default auto-provisioned cert.
-    """
+def _cert_file_for_config(cfg: dict) -> Path:
+    """Path to the cert the adapter serves (server.tls.cert_file if set, else the auto-provisioned default)."""
     cert_file_str = cfg.get("server", {}).get("tls", {}).get("cert_file")
-    if cert_file_str:
-        return _tls.fingerprint_of(Path(cert_file_str).expanduser())
-    return _tls.fingerprint()
+    return Path(cert_file_str).expanduser() if cert_file_str else _tls.cert_dir() / "dispatcher.crt"
 
 
-def _pairing_string(agent_id: str, token: str, cert_sha256: str) -> str:
+def _cert_sha256_for_config(cfg: dict) -> str:
+    return _tls.fingerprint_of(_cert_file_for_config(cfg))
+
+
+def _cert_pem_for_config(cfg: dict) -> str:
+    return _cert_file_for_config(cfg).read_text()
+
+
+def _pairing_string(agent_id: str, token: str, cert_sha256: str, cert_pem: str) -> str:
     """
-    Encode agent_id + token + cert fingerprint into a single paste-safe string.
+    Encode agent_id + token + dispatcher cert into a single paste-safe string.
     Decoded by the plugin's /voice:configure skill via Bun's Buffer.from(..., 'base64url').
     """
     payload = json.dumps({
+        "pairing_v": 2,
         "agent_id": agent_id,
         "token": token,
         "cert_sha256": cert_sha256,
+        "cert_pem": cert_pem,
     }, separators=(",", ":"))
     encoded = base64.urlsafe_b64encode(payload.encode()).decode().rstrip("=")
     return f"voicepair_{encoded}"
@@ -93,7 +98,7 @@ def config() -> None:
 def add_agent(agent_id: str, triggers: str, voice: str,
                language: Optional[str], token: Optional[str]) -> None:
     """Register a new agent and print its pairing string for /voice:configure."""
-    # Auto-provision TLS cert if missing (so the pairing string can embed the fingerprint).
+    # Auto-provision TLS cert if missing (so the pairing string can embed the cert).
     _tls.ensure()
 
     cfg = _load_config()
@@ -115,7 +120,7 @@ def add_agent(agent_id: str, triggers: str, voice: str,
 
     _save_config(cfg)
 
-    pair = _pairing_string(agent_id, tok, _cert_sha256_for_config(cfg))
+    pair = _pairing_string(agent_id, tok, _cert_sha256_for_config(cfg), _cert_pem_for_config(cfg))
     click.echo(f"\n✓ Agent {agent_id!r} registered.")
     click.echo(f"\nPairing string (paste into /voice:configure):")
     click.echo(f"  {pair}")
@@ -141,7 +146,7 @@ def list_agents() -> None:
 @click.argument("agent_id")
 def rotate_token(agent_id: str) -> None:
     """Generate a new token for an agent (invalidates the old one)."""
-    # Auto-provision TLS cert if missing so the pairing string can embed the fingerprint.
+    # Auto-provision TLS cert if missing so the pairing string can embed the cert.
     _tls.ensure()
 
     cfg = _load_config()
@@ -154,7 +159,7 @@ def rotate_token(agent_id: str) -> None:
     agents[agent_id]["websocket_token"] = tok
     _save_config(cfg)
 
-    pair = _pairing_string(agent_id, tok, _cert_sha256_for_config(cfg))
+    pair = _pairing_string(agent_id, tok, _cert_sha256_for_config(cfg), _cert_pem_for_config(cfg))
     click.echo(f"✓ Token rotated for {agent_id!r}.")
     click.echo(f"\nNew pairing string (paste into /voice:configure — this agent only):")
     click.echo(f"  {pair}")
