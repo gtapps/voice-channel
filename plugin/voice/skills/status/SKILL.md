@@ -78,6 +78,12 @@ The MCP server has not started yet. Tell the user to:
 
 The plugin is not configured. Tell the user to run `/voice:configure`.
 
+If `VOICE_STATE_DIR` is unset, also note the migration case: configs created before the
+project-local default lived at `~/.claude/channels/voice`, which the MCP server still uses as its
+fallback. So voice may actually be working even though this skill looks in the project dir and
+reports "not configured" — re-running `/voice:configure` migrates the config to the project-local
+path and pins `VOICE_STATE_DIR`, ending the mismatch.
+
 ## Example output — connected
 
 ```

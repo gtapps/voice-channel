@@ -303,6 +303,9 @@ Common causes:
 - Plugin installed at the wrong scope — install with `--scope local` and run `/voice:configure` in
   the project; it pins the project-local `VOICE_STATE_DIR` for you. Hand-placing config under
   `~/.claude` can leave the env unset so the MCP server can't find it.
+- Configured before the project-local default — if `/voice:status` reports "not configured" but
+  voice still works, your config predates this layout and lives at `~/.claude/channels/voice` (the
+  server's fallback). Re-run `/voice:configure` to migrate it and pin `VOICE_STATE_DIR`.
 
 See [TROUBLESHOOTING.md](TROUBLESHOOTING.md) for deeper diagnostics.
 

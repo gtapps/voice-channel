@@ -101,13 +101,18 @@ verifies the embedded cert against its fingerprint (mirroring the plugin's own p
 ```bash
 bun -e '
 const {createHash,X509Certificate}=require("node:crypto");
-const raw=process.argv[1].replace(/^voicepair_/,"");
-const p=JSON.parse(Buffer.from(raw,"base64url").toString());
-if(p.pairing_v!==2){console.error("ERROR: pairing_v is not 2 — re-run voice-dispatcher config add-agent / rotate-token");process.exit(1);}
-const want=(p.cert_sha256||"").replace(/^sha256:/i,"").replace(/[:\s]/g,"").toLowerCase();
-const got=createHash("sha256").update(new X509Certificate(p.cert_pem).raw).digest("hex");
-if(want!==got){console.error("ERROR: cert_pem does not match cert_sha256 — ask for a fresh pairing string");process.exit(1);}
-console.log(JSON.stringify({agent_id:p.agent_id,token:p.token,cert_sha256:p.cert_sha256,cert_pem:p.cert_pem},null,2));
+try {
+  const raw=process.argv[1].replace(/^voicepair_/,"");
+  const p=JSON.parse(Buffer.from(raw,"base64url").toString());
+  if(p.pairing_v!==2){console.error("ERROR: pairing_v is not 2 — re-run voice-dispatcher config add-agent / rotate-token");process.exit(1);}
+  const want=(p.cert_sha256||"").replace(/^sha256:/i,"").replace(/[:\s]/g,"").toLowerCase();
+  const got=createHash("sha256").update(new X509Certificate(p.cert_pem).raw).digest("hex");
+  if(want!==got){console.error("ERROR: cert_pem does not match cert_sha256 — ask for a fresh pairing string");process.exit(1);}
+  console.log(JSON.stringify({agent_id:p.agent_id,token:p.token,cert_sha256:p.cert_sha256,cert_pem:p.cert_pem},null,2));
+} catch(e) {
+  console.error("ERROR: could not decode pairing string (truncated paste or malformed cert?) — ask for a fresh one: "+e.message);
+  process.exit(1);
+}
 ' "<pairing-string>"
 ```
 
@@ -165,13 +170,18 @@ fs.writeFileSync(f, JSON.stringify(s,null,2)+"\n");
 ' "${CLAUDE_PROJECT_DIR:-$(pwd)}/.claude/settings.local.json" "<STATE_DIR>"
 ```
 
+If this command exits non-zero, stop and relay its `ERROR:` message — **do not** tell the user
+configuration succeeded. `config.json` and `.env` are already written, but until `VOICE_STATE_DIR`
+is pinned the MCP server falls back to `~/.claude/channels/voice` and won't find them; the user must
+fix `settings.local.json` and re-run `/voice:configure`.
+
 The state dir holds the bearer token in `.env`, so keep it out of git — write `<STATE_DIR>/.gitignore`
 containing a single line `*` (use the Write tool). This is harmless if `<STATE_DIR>` lives outside
 any repo.
 
 ## After writing
 
-Tell the user:
+Tell the user (only if the "Pin the state dir" step succeeded):
 
 - `VOICE_STATE_DIR` is now pinned in `.claude/settings.local.json`, so the MCP server and both
   skills resolve this config automatically from the next session start — no manual env setup needed.
