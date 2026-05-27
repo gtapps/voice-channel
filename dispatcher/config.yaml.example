@@ -79,6 +79,16 @@ server:
     # cert_file: "~/.config/voice-dispatcher/tls/dispatcher.crt"
     # key_file:  "~/.config/voice-dispatcher/tls/dispatcher.key"
 
+# ── Notifications ─────────────────────────────────────────────────────────────
+
+notifications:
+  # Play the OS notification sound when a trigger phrase is detected.
+  # On macOS this is the "Glass" alert sound (afplay); on Linux/WSL2 it uses the
+  # freedesktop stereo theme (message.oga via pw-play/paplay).  If the native
+  # player or sound file is unavailable, a short 880 Hz synthesized tone is used
+  # as a universal fallback.  Set false to silence the cue entirely.
+  trigger_beep: true
+
 # ── Piper voices ──────────────────────────────────────────────────────────────
 #
 # Place .onnx voice files (and matching .onnx.json files) under this directory.

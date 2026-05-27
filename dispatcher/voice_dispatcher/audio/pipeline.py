@@ -169,19 +169,58 @@ def parse_verdict(transcript: str, expected_id: str) -> Optional[str]:
     return behavior if "".join(letters) == expected_id else None
 
 
-# ── No-match tick ─────────────────────────────────────────────────────────────
+# ── No-match tick + trigger detect sound ──────────────────────────────────────
 
-def _play_tick(output_device: Optional[int] = None) -> None:
-    """Play a short 40ms 600 Hz sine — indicates VAD fired but no trigger matched."""
+def _play_tone(freq: float, duration: float, output_device: Optional[int] = None) -> None:
+    """Play a short synthesized sine tone."""
     try:
         import numpy as np
         import sounddevice as sd
 
-        t = np.linspace(0, 0.04, int(SAMPLE_RATE * 0.04), endpoint=False)
-        tone = (np.sin(2 * math.pi * 600 * t) * 0.2).astype(np.float32).reshape(-1, 1)
+        t = np.linspace(0, duration, int(SAMPLE_RATE * duration), endpoint=False)
+        tone = (np.sin(2 * math.pi * freq * t) * 0.2).astype(np.float32).reshape(-1, 1)
         sd.play(tone, SAMPLE_RATE, device=output_device, blocking=True)
     except Exception as exc:
-        logger.debug("tick: %s", exc)
+        logger.debug("tone: %s", exc)
+
+
+def _play_tick(output_device: Optional[int] = None) -> None:
+    """Play a short 40ms 600 Hz sine — indicates VAD fired but no trigger matched."""
+    _play_tone(600, 0.04, output_device)
+
+
+def _play_detect_sound(output_device: Optional[int] = None) -> None:
+    """Play the OS notification sound on trigger detection; fall back to a short tone."""
+    import shutil
+    import subprocess
+
+    try:
+        if sys.platform == "darwin":  # macOS
+            if shutil.which("afplay"):
+                subprocess.run(
+                    ["afplay", "/System/Library/Sounds/Glass.aiff"],
+                    check=True,
+                    timeout=5,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                )
+                return
+        else:  # Linux + WSL2
+            snd = "/usr/share/sounds/freedesktop/stereo/message.oga"
+            if os.path.exists(snd):
+                for player in ("pw-play", "paplay"):
+                    if shutil.which(player):
+                        subprocess.run(
+                            [player, snd],
+                            check=True,
+                            timeout=5,
+                            stdout=subprocess.DEVNULL,
+                            stderr=subprocess.DEVNULL,
+                        )
+                        return
+    except Exception as exc:  # includes subprocess.TimeoutExpired
+        logger.debug("detect sound: %s", exc)
+    _play_tone(880, 0.04, output_device)  # universal fallback
 
 
 # ── Audio pipeline ────────────────────────────────────────────────────────────
@@ -213,6 +252,9 @@ class AudioPipeline:
         )
         self._no_match_tick: bool = bool(
             config.get("audio", {}).get("no_match_tick", False)
+        )
+        self._trigger_beep: bool = bool(
+            config.get("notifications", {}).get("trigger_beep", True)
         )
         self._whisper_model_size: str = config.get("whisper", {}).get("model", "tiny")
         self._whisper_device: str = config.get("whisper", {}).get("device", "cpu")
@@ -513,6 +555,12 @@ class AudioPipeline:
                     trigger=matched_trigger,
                     ts=ts,
                 )
+                if self._trigger_beep and not self._speaking.is_set():
+                    threading.Thread(
+                        target=_play_detect_sound,
+                        args=(self._resolved_output,),
+                        daemon=True,
+                    ).start()
                 return  # first match wins
 
         logger.debug("no trigger matched for: %r", transcript)
