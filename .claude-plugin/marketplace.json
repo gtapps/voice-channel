@@ -11,7 +11,7 @@
       "name": "voice",
       "source": "./plugin/voice",
       "description": "Voice channel for Claude Code — ambient voice control via a LAN dispatcher with local Whisper STT and Piper TTS.",
-      "version": "0.0.2",
+      "version": "0.0.3",
       "category": "productivity",
       "author": {
         "name": "gtapps"

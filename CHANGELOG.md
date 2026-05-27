@@ -1,5 +1,29 @@
 # Changelog
 
+## [0.0.3] - 2026-05-27
+
+This release brings full **macOS compatibility**: the entire setup flow — pairing, TLS cert pinning, and project-local state isolation — now works on macOS without manual workarounds. Both platforms also gain a new trigger-beep feature.
+
+### Changed
+
+- **compatibility: macOS support** — `voice-dispatcher` and `/voice:configure` are now fully tested and supported on macOS; pairing, cert-pinning, and state-isolation all work out of the box.
+
+### Added
+
+- **dispatcher: trigger beep** — plays the OS notification sound immediately when a trigger phrase is matched, giving the operator an instant "got it" cue before TTS begins. Uses `afplay` on macOS, `pw-play`/`paplay` on Linux, and a synthesized 880 Hz tone via sounddevice as a universal fallback. Enabled by default; disable with `notifications.trigger_beep: false` in `config.yaml`.
+
+### Fixed
+
+- **plugin: configure macOS PEM fix** — decode and verify the pairing string in a single `bun` command so the cert check never hand-parses the PEM, eliminating the spurious "pem has lines of non-standard length" error on macOS.
+- **plugin: project-local state dir** — `/voice:configure` now pins `VOICE_STATE_DIR` to `<project>/.claude/channels/voice` in the project's `settings.local.json`, automatically isolating each project's token and gitignoring the state dir so the token can't be committed by accident.
+- **plugin: error hardening** — a malformed pairing-string paste now emits a clean `ERROR` line (no stack trace); the status skill and README explain the "works but shows not configured" case for installs that predate project-local state dirs.
+
+### Upgrade Instructions
+
+Upgrade both dispatcher and plugin together. No re-pairing is required.
+
+To gain per-project token isolation, re-run `/voice:configure` in each project — it will write a fresh `settings.local.json` entry pointing to a project-local state dir. Existing setups that skip this continue to work from the old global state dir.
+
 ## [0.0.2] - 2026-05-26
 
 ### Changed
