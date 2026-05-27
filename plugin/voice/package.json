@@ -6,7 +6,7 @@
   "bin": "./server.ts",
   "scripts": {
     "start": "bun install --production --no-summary && bun server.ts",
-    "test": "vitest run tests/protocol.test.ts"
+    "test": "bun test tests/protocol.test.ts"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.0.0",
@@ -15,7 +15,6 @@
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
-    "@types/ws": "^8.5.14",
-    "vitest": "^3.0.0"
+    "@types/ws": "^8.5.14"
   }
 }
