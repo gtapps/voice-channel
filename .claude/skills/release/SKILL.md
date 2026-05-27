@@ -62,7 +62,7 @@ late one.
    collection errors that look like missing audio deps rather than real failures, note it and
    continue; any actual test failure stops the release.
 
-3. **Run the plugin test suite** (Bun/vitest):
+3. **Run the plugin test suite** (Bun):
    ```bash
    (cd plugin/voice && bun install && bun run test 2>&1)
    ```

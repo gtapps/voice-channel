@@ -28,7 +28,7 @@ pip install -e ".[dev]"                 # editable install with pytest deps
 
 # Plugin (TypeScript/Bun) — from plugin/voice/
 bun install                             # install deps (creates/updates bun.lock)
-bun run test                            # vitest, runs tests/protocol.test.ts
+bun run test                            # bun test, runs tests/protocol.test.ts
 ```
 
 CI (`.github/workflows/ci.yml`) installs the dispatcher **lean** (`pip install --no-deps`, then a

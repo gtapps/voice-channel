@@ -6,7 +6,7 @@
  * WebSocketServer mocks the dispatcher.
  */
 
-import { describe, it, expect, beforeEach, afterEach, beforeAll, afterAll, vi } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach, beforeAll, afterAll } from 'bun:test'
 import { spawn, spawnSync, type ChildProcess } from 'child_process'
 import { WebSocketServer, WebSocket } from 'ws'
 import { readFileSync, mkdirSync, writeFileSync, mkdtempSync, rmSync } from 'fs'
