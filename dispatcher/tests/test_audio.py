@@ -202,7 +202,7 @@ def test_parse_verdict_juliett_alt_spelling() -> None:
 
 # ── Pipeline instantiation (no audio) ────────────────────────────────────────
 
-def _make_pipeline(enable_relay: bool = True):
+def _make_pipeline(enable_relay: bool = True, extra_config: dict | None = None):
     from voice_dispatcher.core.handlers import Dispatcher
     from voice_dispatcher.core.session import AgentConfig, SessionRegistry
     from voice_dispatcher.audio.pipeline import AudioPipeline
@@ -220,6 +220,7 @@ def _make_pipeline(enable_relay: bool = True):
                                "websocket_token": "tok"}},
         "audio": {"input_device": None, "output_device": None},
         "whisper": {"model": "tiny", "device": "cpu", "compute_type": "int8"},
+        **(extra_config or {}),
     }
     return d, AudioPipeline(d, config)
 
@@ -308,3 +309,66 @@ def test_verdict_window_expiry_reverts_to_trigger_mode() -> None:
     pipeline._process_speech(object())
     # Expired → pending cleared, falls back to normal listening
     assert pipeline._pending_permission is None
+
+
+# ── Trigger detect beep ───────────────────────────────────────────────────────
+
+def test_trigger_beep_default_on() -> None:
+    """Config lookup default: trigger_beep is True when no notifications block present."""
+    _, pipeline = _make_pipeline()
+    assert pipeline._trigger_beep is True
+
+
+def test_trigger_beep_disabled_via_config() -> None:
+    """Config lookup: trigger_beep False when notifications.trigger_beep is False."""
+    _, pipeline = _make_pipeline(extra_config={"notifications": {"trigger_beep": False}})
+    assert pipeline._trigger_beep is False
+
+
+def test_trigger_beep_fires_on_match(monkeypatch) -> None:
+    """_play_detect_sound is called on a daemon thread when a trigger matches."""
+    import threading
+    import voice_dispatcher.audio.pipeline as _mod
+
+    fired = threading.Event()
+    monkeypatch.setattr(_mod, "_play_detect_sound", lambda *_: fired.set())
+
+    _, pipeline = _make_pipeline()
+    pipeline._whisper_model = _FakeWhisper("hey jarvis turn on the lights")
+    pipeline._process_speech(object())
+
+    assert fired.wait(timeout=2), "_play_detect_sound was not called within 2s"
+
+
+def test_trigger_beep_silent_when_disabled(monkeypatch) -> None:
+    """_play_detect_sound is NOT called when notifications.trigger_beep is False."""
+    import voice_dispatcher.audio.pipeline as _mod
+
+    called = []
+    monkeypatch.setattr(_mod, "_play_detect_sound", lambda *_: called.append(True))
+
+    _, pipeline = _make_pipeline(extra_config={"notifications": {"trigger_beep": False}})
+    pipeline._whisper_model = _FakeWhisper("hey jarvis turn on the lights")
+    pipeline._process_speech(object())
+
+    # Give any potential daemon thread a moment to run, then assert silence
+    import time
+    time.sleep(0.05)
+    assert called == []
+
+
+def test_trigger_beep_skipped_while_speaking(monkeypatch) -> None:
+    """_play_detect_sound is NOT called when TTS is already playing (_speaking set)."""
+    import voice_dispatcher.audio.pipeline as _mod
+
+    called = []
+    monkeypatch.setattr(_mod, "_play_detect_sound", lambda *_: called.append(True))
+
+    _, pipeline = _make_pipeline()
+    pipeline._speaking.set()  # simulate TTS in progress
+    pipeline._whisper_model = _FakeWhisper("hey jarvis turn on the lights")
+    pipeline._process_speech(object())
+
+    import time
+    time.sleep(0.05)
+    assert called == []
