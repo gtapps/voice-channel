@@ -372,3 +372,86 @@ def test_trigger_beep_skipped_while_speaking(monkeypatch) -> None:
     import time
     time.sleep(0.05)
     assert called == []
+
+
+# ── _play_detect_sound platform selection ─────────────────────────────────────
+
+def _patch_detect_env(monkeypatch, *, platform, which_ok, file_exists=True):
+    """Stub out the platform/player probes and capture subprocess + tone calls.
+
+    `shutil`/`subprocess` are imported *inside* `_play_detect_sound`, so we patch
+    the real module singletons (the function-local import resolves to the same
+    object); `os`/`sys` are module-level in pipeline.py.
+    """
+    import shutil
+    import subprocess
+    import voice_dispatcher.audio.pipeline as _mod
+
+    runs: list[list[str]] = []
+    tones: list[float] = []
+    monkeypatch.setattr(_mod.sys, "platform", platform)
+    monkeypatch.setattr(_mod.os.path, "exists", lambda _p: file_exists)
+    monkeypatch.setattr(
+        shutil, "which", lambda cmd: f"/usr/bin/{cmd}" if cmd in which_ok else None
+    )
+    monkeypatch.setattr(subprocess, "run", lambda cmd, **kw: runs.append(cmd))
+    monkeypatch.setattr(_mod, "_play_tone", lambda *a: tones.append(a[0]))
+    return _mod, runs, tones
+
+
+def test_detect_sound_macos_uses_afplay(monkeypatch) -> None:
+    """darwin + afplay present → afplay invoked, no tone fallback."""
+    mod, runs, tones = _patch_detect_env(monkeypatch, platform="darwin", which_ok={"afplay"})
+    mod._play_detect_sound()
+    assert runs == [["afplay", "/System/Library/Sounds/Glass.aiff"]]
+    assert tones == []
+
+
+def test_detect_sound_linux_prefers_pw_play(monkeypatch) -> None:
+    """Linux with both players → pw-play wins over paplay."""
+    mod, runs, tones = _patch_detect_env(
+        monkeypatch, platform="linux", which_ok={"pw-play", "paplay"}
+    )
+    mod._play_detect_sound()
+    assert runs == [["pw-play", "/usr/share/sounds/freedesktop/stereo/message.oga"]]
+    assert tones == []
+
+
+def test_detect_sound_linux_falls_back_to_paplay(monkeypatch) -> None:
+    """Linux with only paplay → paplay used."""
+    mod, runs, tones = _patch_detect_env(monkeypatch, platform="linux", which_ok={"paplay"})
+    mod._play_detect_sound()
+    assert runs == [["paplay", "/usr/share/sounds/freedesktop/stereo/message.oga"]]
+    assert tones == []
+
+
+def test_detect_sound_falls_back_to_tone_when_file_missing(monkeypatch) -> None:
+    """Linux but sound file absent → no player run, 880 Hz tone fallback."""
+    mod, runs, tones = _patch_detect_env(
+        monkeypatch, platform="linux", which_ok={"pw-play"}, file_exists=False
+    )
+    mod._play_detect_sound()
+    assert runs == []
+    assert tones == [880]
+
+
+def test_detect_sound_falls_back_to_tone_when_no_player(monkeypatch) -> None:
+    """Linux, file present but no player on PATH → 880 Hz tone fallback."""
+    mod, runs, tones = _patch_detect_env(monkeypatch, platform="linux", which_ok=set())
+    mod._play_detect_sound()
+    assert runs == []
+    assert tones == [880]
+
+
+def test_detect_sound_falls_back_to_tone_on_player_error(monkeypatch) -> None:
+    """Player raises (e.g. TimeoutExpired) → caught, 880 Hz tone fallback."""
+    import subprocess
+
+    mod, _runs, tones = _patch_detect_env(monkeypatch, platform="linux", which_ok={"pw-play"})
+
+    def _boom(cmd, **kw):
+        raise subprocess.TimeoutExpired(cmd, kw.get("timeout"))
+
+    monkeypatch.setattr(subprocess, "run", _boom)
+    mod._play_detect_sound()
+    assert tones == [880]

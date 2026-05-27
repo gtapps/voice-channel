@@ -201,6 +201,8 @@ def _play_detect_sound(output_device: Optional[int] = None) -> None:
                     ["afplay", "/System/Library/Sounds/Glass.aiff"],
                     check=True,
                     timeout=5,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
                 )
                 return
         else:  # Linux + WSL2
@@ -208,7 +210,13 @@ def _play_detect_sound(output_device: Optional[int] = None) -> None:
             if os.path.exists(snd):
                 for player in ("pw-play", "paplay"):
                     if shutil.which(player):
-                        subprocess.run([player, snd], check=True, timeout=5)
+                        subprocess.run(
+                            [player, snd],
+                            check=True,
+                            timeout=5,
+                            stdout=subprocess.DEVNULL,
+                            stderr=subprocess.DEVNULL,
+                        )
                         return
     except Exception as exc:  # includes subprocess.TimeoutExpired
         logger.debug("detect sound: %s", exc)
