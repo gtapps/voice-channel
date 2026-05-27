@@ -12,7 +12,7 @@ A Claude Code **[channel plugin](https://code.claude.com/docs/en/channels)**. Th
 Google Home but local, and pointed at your Claude Code instances. Speak a trigger phrase + what
 you want, and Claude replies aloud. Multi-agent routing support across local network & docker.
 
-**Compatibility:** Linux ✅ · Windows (WSL2) ✅ · macOS — should work, unverified
+**Compatibility:** Linux ✅ · Windows (WSL2) ✅ · macOS ✅
 
 ## Architecture
 
