@@ -15,7 +15,7 @@ Report the current state of the voice channel connection.
 First run:
 
 ```bash
-echo "${VOICE_STATE_DIR:-$HOME/.claude/channels/voice}"
+echo "${VOICE_STATE_DIR:-${CLAUDE_PROJECT_DIR:-$(pwd)}/.claude/channels/voice}"
 ```
 
 Use the output as `<STATE_DIR>` for all file paths below.
@@ -77,6 +77,12 @@ The MCP server has not started yet. Tell the user to:
 ## If config.json does not exist
 
 The plugin is not configured. Tell the user to run `/voice:configure`.
+
+If `VOICE_STATE_DIR` is unset, also note the migration case: configs created before the
+project-local default lived at `~/.claude/channels/voice`, which the MCP server still uses as its
+fallback. So voice may actually be working even though this skill looks in the project dir and
+reports "not configured" — re-running `/voice:configure` migrates the config to the project-local
+path and pins `VOICE_STATE_DIR`, ending the mismatch.
 
 ## Example output — connected
 

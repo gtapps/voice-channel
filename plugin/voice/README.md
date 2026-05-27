@@ -28,7 +28,7 @@ Start a session with the channel loaded (`voice-channel` is a community plugin s
 claude --dangerously-load-development-channels plugin:voice@voice-channel
 ```
 
-Then inside the session, configure (writes `~/.claude/channels/voice/config.json` and `.env`):
+Then inside the session, configure (writes `<project>/.claude/channels/voice/config.json` and `.env`):
 
 ```
 /voice:configure
@@ -76,7 +76,11 @@ Operator
 
 ## Configuration
 
-State lives at `~/.claude/channels/voice/`. Override with `VOICE_STATE_DIR`:
+`/voice:configure` stores state at `<project>/.claude/channels/voice/` and pins `VOICE_STATE_DIR`
+to that path in the project's `.claude/settings.local.json`, so each project folder is isolated
+automatically. The MCP server falls back to `~/.claude/channels/voice/` only when `VOICE_STATE_DIR`
+is unset (i.e. before configure has run). Override the location by setting `VOICE_STATE_DIR`
+yourself before configuring:
 
 ```json
 {
@@ -119,8 +123,12 @@ apart.
    voice-dispatcher config add-agent beta  --triggers "hey beta"  --voice beta.onnx
    ```
 
-2. **Give each instance its own config dir** by adding `VOICE_STATE_DIR` to the project's
-   `.claude/settings.local.json` (gitignored, machine-local):
+2. **Each project folder is isolated automatically.** `/voice:configure` defaults the state dir to
+   `<project>/.claude/channels/voice` and pins `VOICE_STATE_DIR` into that project's
+   `.claude/settings.local.json` (gitignored). Instances in different folders never collide.
+
+   Only for a custom location (or two instances from the *same* folder), set `VOICE_STATE_DIR`
+   yourself before running `/voice:configure` — the skill respects and pins it:
 
    ```json
    {
@@ -130,12 +138,8 @@ apart.
    }
    ```
 
-   Use a different path per project (`voice-alpha`, `voice-beta`, …). Claude Code injects `env`
-   into every MCP server it spawns, so the plugin and both skills see it automatically. Without
-   this, all instances share `~/.claude/channels/voice/` and the same `agent_id`.
-
-3. **Run `/voice:configure` once per instance.** The skill picks up `VOICE_STATE_DIR`
-   automatically and writes the config to the right place.
+3. **Run `/voice:configure` once per instance.** The skill writes the config and pins
+   `VOICE_STATE_DIR` to the right place.
 
 ## Permission relay
 
@@ -146,7 +150,7 @@ by voice. Enable only on a trusted setup — see [Security → Permission relay]
 
 ```bash
 claude plugin uninstall voice@voice-channel
-rm -rf ~/.claude/channels/voice/
+rm -rf .claude/channels/voice/   # run from each project root where you ran /voice:configure
 ```
 
 To also remove the dispatcher and downloaded models, see [Uninstall](../../README.md#uninstall) in the root README.
