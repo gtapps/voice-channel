@@ -20,10 +20,12 @@ Configure the voice channel connection inside this agent container.
 Run:
 
 ```bash
-echo "${VOICE_STATE_DIR:-$HOME/.claude/channels/voice}"
+echo "${VOICE_STATE_DIR:-${CLAUDE_PROJECT_DIR:-$(pwd)}/.claude/channels/voice}"
 ```
 
-Use the output as `<STATE_DIR>` for every file path below.
+Use the output as `<STATE_DIR>` for every file path below. When `VOICE_STATE_DIR` is already set
+it wins; otherwise the state dir defaults into the project Claude Code was started in
+(`<project>/.claude/channels/voice`), and the "Pin the state dir" step below makes that durable.
 
 ## Detect existing config
 
@@ -89,24 +91,36 @@ Handle the result:
   `voice-dispatcher config add-agent <agent_id> --triggers "..."` on their laptop, then re-run `/voice:configure`
 - **Other (typed value starting with `voicepair_`)** → decode it (see below)
 
-## Decode the pairing string
+## Decode and verify the pairing string
 
-Use Bun (the plugin's guaranteed runtime — not coreutils `base64`, which may be
-absent in minimal containers and cannot decode url-safe base64):
+Use Bun (the plugin's guaranteed runtime — not coreutils `base64`, which may be absent in minimal
+containers and cannot decode url-safe base64). This single command decodes the pairing string,
+verifies the embedded cert against its fingerprint (mirroring the plugin's own pin check —
+`sha256` of the cert's DER bytes), and prints the fields you need as JSON:
 
 ```bash
-bun -e 'process.stdout.write(Buffer.from(process.argv[1].replace(/^voicepair_/,""),"base64url").toString())' "<pairing-string>"
+bun -e '
+const {createHash,X509Certificate}=require("node:crypto");
+const raw=process.argv[1].replace(/^voicepair_/,"");
+const p=JSON.parse(Buffer.from(raw,"base64url").toString());
+if(p.pairing_v!==2){console.error("ERROR: pairing_v is not 2 — re-run voice-dispatcher config add-agent / rotate-token");process.exit(1);}
+const want=(p.cert_sha256||"").replace(/^sha256:/i,"").replace(/[:\s]/g,"").toLowerCase();
+const got=createHash("sha256").update(new X509Certificate(p.cert_pem).raw).digest("hex");
+if(want!==got){console.error("ERROR: cert_pem does not match cert_sha256 — ask for a fresh pairing string");process.exit(1);}
+console.log(JSON.stringify({agent_id:p.agent_id,token:p.token,cert_sha256:p.cert_sha256,cert_pem:p.cert_pem},null,2));
+' "<pairing-string>"
 ```
 
-Parse the JSON output. It must contain:
+**Do this verification only via this Bun command — never inspect or parse the PEM text yourself**
+(hand-parsing the PEM is what produces spurious "the pem has some lines non-standard length"
+errors). If the command exits non-zero, stop and relay its `ERROR:` message; do not write any files.
 
-- `pairing_v` — must be `2`; if missing or not `2`, stop and ask the user to upgrade/re-run `voice-dispatcher config add-agent` or `rotate-token`
+On success, take the printed JSON fields:
+
 - `agent_id` — the agent's ID on the dispatcher
 - `token` — the bearer token (a credential — write to `.env`, not `config.json`)
 - `cert_sha256` — the dispatcher's TLS cert fingerprint (public — write to `config.json`)
 - `cert_pem` — the dispatcher's public TLS certificate PEM (public — write to `config.json` as `dispatcher_cert_pem`)
-
-Before writing, verify `sha256(DER(cert_pem))` equals `cert_sha256`. Use Bun's `X509Certificate` and `createHash`; if the values disagree, stop and ask for a fresh pairing string.
 
 ## Write `.env` and `config.json`
 
@@ -134,10 +148,33 @@ chmod 600 "<STATE_DIR>/.env"
 }
 ```
 
+## Pin the state dir
+
+So the next session's MCP server resolves the same `<STATE_DIR>`, pin `VOICE_STATE_DIR` into the
+project's local settings (Claude Code injects this `env` block into every MCP server it spawns).
+Merge it in without clobbering existing keys — use Bun:
+
+```bash
+bun -e '
+const fs=require("fs"), path=require("path");
+const f=process.argv[1], dir=process.argv[2];
+let s={}; try { s=JSON.parse(fs.readFileSync(f,"utf8")); } catch(e) { if(e.code!=="ENOENT"){console.error("ERROR: could not read/parse "+f+" — fix or remove it, then re-run: "+e.message);process.exit(1);} }
+s.env={...(s.env||{}), VOICE_STATE_DIR:dir};
+fs.mkdirSync(path.dirname(f),{recursive:true});
+fs.writeFileSync(f, JSON.stringify(s,null,2)+"\n");
+' "${CLAUDE_PROJECT_DIR:-$(pwd)}/.claude/settings.local.json" "<STATE_DIR>"
+```
+
+The state dir holds the bearer token in `.env`, so keep it out of git — write `<STATE_DIR>/.gitignore`
+containing a single line `*` (use the Write tool). This is harmless if `<STATE_DIR>` lives outside
+any repo.
+
 ## After writing
 
 Tell the user:
 
+- `VOICE_STATE_DIR` is now pinned in `.claude/settings.local.json`, so the MCP server and both
+  skills resolve this config automatically from the next session start — no manual env setup needed.
 - To activate the channel, close this session and start a new one with:
   ```
   claude --dangerously-load-development-channels plugin:voice@voice-channel

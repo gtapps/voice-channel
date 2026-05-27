@@ -58,9 +58,11 @@ these scopes separate:
 | Claude Code plugin | Each Claude Code environment/project where you want voice | Usually once per project with `--scope local` |
 | `/voice:configure` | Inside each Claude Code session/project                   | Once per instance/config dir                  |
 
-The default plugin state directory is `~/.claude/channels/voice/`. If you run more than one
-Claude Code voice instance on the same machine, give each one a different dispatcher agent ID,
-trigger phrase, and `VOICE_STATE_DIR`; otherwise they will share the same `agent_id` and token.
+After `/voice:configure`, each project's state lives at `<project>/.claude/channels/voice/` (pinned
+via `VOICE_STATE_DIR` in the project's `.claude/settings.local.json`), so instances in different
+folders are isolated automatically. To run two instances from the **same** folder, give each a
+different dispatcher agent ID, trigger phrase, and `VOICE_STATE_DIR`; otherwise they share the same
+`agent_id` and token.
 
 ## Setup
 
@@ -71,12 +73,14 @@ Install the system audio library, then the dispatcher. It stays off until you st
 ```bash
 # macOS
 brew install portaudio pipx
+pipx ensurepath   # restart your shell afterwards so voice-dispatcher lands on PATH
 pipx install "git+https://github.com/gtapps/voice-channel.git#subdirectory=dispatcher"
 ```
 
 ```bash
 # Linux
 sudo apt install portaudio19-dev pipewire-bin pipx
+pipx ensurepath   # restart your shell afterwards so voice-dispatcher lands on PATH
 pipx install "git+https://github.com/gtapps/voice-channel.git#subdirectory=dispatcher"
 ```
 
@@ -187,7 +191,7 @@ You will be prompted to answer:
 | Dispatcher URL | `wss://127.0.0.1:7355` _(same machine)_ — see [URL table](#dispatcher-url--where-claude-code-runs) for other setups |
 | Pairing string | The `voicepair_...` string printed in step 3 (bundles agent ID, token, and pinned TLS cert in one paste)            |
 
-The skill writes the **bearer token** to `~/.claude/channels/voice/.env` (chmod 600 — it's a credential) and the rest of the config to `config.json`.
+The skill writes the **bearer token** to `<project>/.claude/channels/voice/.env` (chmod 600 — it's a credential) and the rest of the config to `config.json`, then pins `VOICE_STATE_DIR` in the project's `.claude/settings.local.json` so the MCP server picks it up. The state dir gets a `.gitignore` so the token is never committed.
 
 After `/voice:configure`, restart Claude Code with the same channel flag so the MCP server starts
 with the new config:
@@ -239,8 +243,13 @@ apart.
    voice-dispatcher config add-agent beta  --triggers "hey beta"  --voice beta.onnx
    ```
 
-2. **Give each instance its own config dir** by adding `VOICE_STATE_DIR` to the project's
-   `.claude/settings.local.json` (gitignored, machine-local):
+2. **Each project folder is isolated automatically.** `/voice:configure` defaults the state dir to
+   `<project>/.claude/channels/voice` and pins `VOICE_STATE_DIR` into that project's
+   `.claude/settings.local.json` (gitignored). Two Claude Code instances in different folders never
+   collide — no manual env setup needed.
+
+   Only if you want a custom location (or two instances from the *same* folder), set
+   `VOICE_STATE_DIR` yourself before running `/voice:configure` — the skill respects and pins it:
 
    ```json
    {
@@ -250,17 +259,13 @@ apart.
    }
    ```
 
-   Use a different path per project (`voice-alpha`, `voice-beta`, …). Claude Code injects `env`
-   into every MCP server it spawns, so the plugin and both skills see it automatically. Without
-   this, all instances share `~/.claude/channels/voice/` and the same `agent_id`.
-
-3. **Run `/voice:configure` once per instance.** The skill picks up `VOICE_STATE_DIR`
-   automatically and writes the config to the right place.
+3. **Run `/voice:configure` once per instance** with that instance's pairing string. It writes the
+   config and pins `VOICE_STATE_DIR` so the MCP server and both skills find it on the next launch.
 
 ### Add voice to another Claude Code folder
 
-If the dispatcher and plugin are already installed, adding voice to another local folder is mostly
-about creating a new dispatcher identity and isolating plugin state:
+If the dispatcher and plugin are already installed, adding voice to another local folder is just a
+new dispatcher identity plus `/voice:configure` in that folder:
 
 ```bash
 voice-dispatcher config add-agent beta \
@@ -268,18 +273,9 @@ voice-dispatcher config add-agent beta \
   --voice en_US-lessac-medium.onnx
 ```
 
-In the second project's `.claude/settings.local.json`:
-
-```json
-{
-  "env": {
-    "VOICE_STATE_DIR": "/home/you/.claude/channels/voice-beta"
-  }
-}
-```
-
-Then start Claude Code in that folder with the voice channel flag, run `/voice:configure`, and paste
-the `voicepair_...` string for `beta`.
+Start Claude Code in that folder with the voice channel flag, run `/voice:configure`, and paste the
+`voicepair_...` string for `beta`. The skill isolates state under that project's
+`.claude/channels/voice` automatically — no manual `VOICE_STATE_DIR` edit needed.
 
 ## Troubleshooting
 
@@ -304,6 +300,9 @@ Common causes:
 - Wrong dispatcher URL for Docker or LAN
 - Stale pairing string after TLS or token rotation
 - Bun is not on `PATH` where Claude Code runs
+- Plugin installed at the wrong scope — install with `--scope local` and run `/voice:configure` in
+  the project; it pins the project-local `VOICE_STATE_DIR` for you. Hand-placing config under
+  `~/.claude` can leave the env unset so the MCP server can't find it.
 
 See [TROUBLESHOOTING.md](TROUBLESHOOTING.md) for deeper diagnostics.
 
@@ -320,8 +319,9 @@ Identity is split:
 - **Cert** (shared, per-dispatcher) — answers _"is this the real dispatcher?"_
 - **Token** (per-agent, secret) — answers _"which agent is this?"_
 
-The token is stored in `~/.claude/channels/voice/.env` at `chmod 600` (it's a credential). The
-cert PEM and fingerprint are stored in `config.json` (they are public certificate material).
+The token is stored in `<project>/.claude/channels/voice/.env` at `chmod 600` (it's a credential),
+gitignored by the state dir's own `.gitignore`. The cert PEM and fingerprint are stored in
+`config.json` (they are public certificate material).
 
 **How pairing works:**
 
@@ -393,7 +393,7 @@ pipx uninstall voice-dispatcher
 
 ```bash
 claude plugin uninstall voice@voice-channel
-rm -rf ~/.claude/channels/voice/
+rm -rf .claude/channels/voice/   # run from each project root where you ran /voice:configure
 ```
 
 **Remove downloaded models** (optional — the Piper voice + Whisper model):

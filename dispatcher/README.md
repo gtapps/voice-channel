@@ -21,6 +21,10 @@ sudo apt install portaudio19-dev pipewire-bin   # Linux / WSL2  ·  macOS: brew 
 pipx install "git+https://github.com/gtapps/voice-channel.git#subdirectory=dispatcher"
 ```
 
+> If `voice-dispatcher` is not found after install, run `pipx ensurepath` and restart your shell.
+> The plugin half needs [Bun](https://bun.sh) on `PATH` wherever Claude Code runs — see the
+> [root README](../README.md#5-install-the-plugin).
+
 - **macOS:** on first `voice-dispatcher run`, macOS asks for microphone permission — click
   **Allow** (or System Settings → Privacy & Security → Microphone → enable your terminal).
 - **Windows:** install [WSL2](https://learn.microsoft.com/windows/wsl/install) and run the Linux

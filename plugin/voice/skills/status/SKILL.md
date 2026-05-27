@@ -15,7 +15,7 @@ Report the current state of the voice channel connection.
 First run:
 
 ```bash
-echo "${VOICE_STATE_DIR:-$HOME/.claude/channels/voice}"
+echo "${VOICE_STATE_DIR:-${CLAUDE_PROJECT_DIR:-$(pwd)}/.claude/channels/voice}"
 ```
 
 Use the output as `<STATE_DIR>` for all file paths below.
