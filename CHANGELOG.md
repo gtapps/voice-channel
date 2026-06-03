@@ -1,5 +1,25 @@
 # Changelog
 
+## [0.0.4] - 2026-06-03
+
+This release significantly improves **wake-word detection reliability**: a pre-roll buffer prevents clipping the start of utterances, a sliding-window fuzzy matcher handles filler words and per-word edit tolerance, Whisper is biased toward your configured trigger vocabulary, and loudness is normalized before transcription to help quiet Bluetooth/HFP captures.
+
+### Changed
+
+- **dispatcher: trigger matching — sliding window + per-word tolerance** — the matcher now tries up to three starting offsets so filler words prepended by Whisper ("um hey jarvis") don't prevent a match. Tolerance is now one allowed edit per trigger word (previously a character-count heuristic), making it more predictable across short and long triggers.
+- **dispatcher: default Whisper model `tiny` → `base`** — better transcription accuracy out of the box at a modest CPU cost. Override with `whisper.model: tiny` in `config.yaml` if needed on low-power hardware.
+
+### Added
+
+- **dispatcher: pre-roll audio buffer** — 320 ms of audio is buffered before VAD onset so the first syllable of an utterance is never clipped before Whisper sees it.
+- **dispatcher: Whisper initial-prompt biasing** — the configured trigger phrases are fed to Whisper as an `initial_prompt`, nudging the model toward your vocabulary and reducing mis-transcriptions of trigger words.
+- **dispatcher: `normalize_gain` config option** — loudness-normalizes captured audio before transcription (default `true`). Particularly effective for AirPods and other Bluetooth sources that capture at low gain. Disable with `audio.normalize_gain: false` in `config.yaml`.
+- **dispatcher: `trigger_tolerance` config option** — override the per-word edit tolerance globally (`audio.trigger_tolerance: N` in `config.yaml`). Leave unset to use the automatic one-edit-per-word default.
+
+### Upgrade Instructions
+
+Upgrade dispatcher only — no plugin changes in this release. No re-pairing required. The default Whisper model changes from `tiny` to `base`; if transcription feels slower on your hardware, add `whisper: {model: tiny}` to `config.yaml` to revert.
+
 ## [0.0.3] - 2026-05-27
 
 This release brings full **macOS compatibility**: the entire setup flow — pairing, TLS cert pinning, and project-local state isolation — now works on macOS without manual workarounds. Both platforms also gain a new trigger-beep feature.

@@ -164,7 +164,7 @@ const experimental: Record<string, object> = { 'claude/channel': {} }
 if (cfg.enable_permission_relay) experimental['claude/channel/permission'] = {}
 
 const mcp = new Server(
-  { name: 'voice', version: '0.0.3' },
+  { name: 'voice', version: '0.0.4' },
   {
     capabilities: { tools: {}, experimental },
     instructions: [

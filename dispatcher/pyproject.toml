@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "voice-dispatcher"
-version = "0.0.3"
+version = "0.0.4"
 description = "Voice dispatcher — ambient voice control for Claude Code"
 license = { text = "Apache-2.0" }
 requires-python = ">=3.11"

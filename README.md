@@ -277,6 +277,31 @@ Start Claude Code in that folder with the voice channel flag, run `/voice:config
 `voicepair_...` string for `beta`. The skill isolates state under that project's
 `.claude/channels/voice` automatically — no manual `VOICE_STATE_DIR` edit needed.
 
+## Upgrading
+
+Check [CHANGELOG.md](CHANGELOG.md) first — it lists whether a release requires re-pairing.
+
+**Upgrade the dispatcher** (run on the machine with mic + speakers):
+
+```bash
+pipx install --force "git+https://github.com/gtapps/voice-channel.git#subdirectory=dispatcher"
+```
+
+**Upgrade the plugin** (run where Claude Code runs):
+
+```bash
+claude plugin marketplace update voice-channel
+claude plugin install voice@voice-channel --scope local
+```
+
+If the release notes say re-pairing is required, rotate each agent's token and re-run `/voice:configure`:
+
+```bash
+voice-dispatcher config rotate-token <agent-id>   # prints a new voicepair_... string
+```
+
+Then paste the new pairing string into `/voice:configure` inside each affected Claude Code session.
+
 ## Troubleshooting
 
 > Nothing working? Run `/voice:status` inside your Claude Code session — it shows connection state, last utterance, and any errors.
