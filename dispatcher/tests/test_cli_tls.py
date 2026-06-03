@@ -12,6 +12,7 @@ import os
 from pathlib import Path
 
 import pytest
+import yaml
 from click.testing import CliRunner
 
 from voice_dispatcher.cli import cli
@@ -171,3 +172,70 @@ def test_rotate_token_emits_pairing_string(runner_env):
     assert payload["pairing_v"] == 2
     assert payload["agent_id"] == "jarvis"
     assert payload["cert_pem"].startswith("-----BEGIN CERTIFICATE-----")
+
+
+# ── set-language ──────────────────────────────────────────────────────────────
+
+def _read_config(tmp_path: Path) -> dict:
+    return yaml.safe_load((tmp_path / "config.yaml").read_text())
+
+
+def _add_jarvis(runner, env) -> None:
+    runner.invoke(
+        cli,
+        ["config", "add-agent", "jarvis",
+         "--triggers", "hey jarvis",
+         "--voice", "en_US-lessac-medium.onnx"],
+        env=env,
+    )
+
+
+def test_set_language_global(runner_env):
+    """set-language without --agent writes the global whisper.language lock."""
+    runner, env, tmp_path = runner_env
+    result = runner.invoke(cli, ["config", "set-language", "pt"], env=env)
+    assert result.exit_code == 0, result.output
+    assert _read_config(tmp_path)["whisper"]["language"] == "pt"
+
+
+def test_set_language_global_clear(runner_env):
+    """'auto' clears the global lock to None (auto-detect)."""
+    runner, env, tmp_path = runner_env
+    runner.invoke(cli, ["config", "set-language", "pt"], env=env)
+    runner.invoke(cli, ["config", "set-language", "auto"], env=env)
+    assert _read_config(tmp_path)["whisper"]["language"] is None
+
+
+def test_set_language_agent(runner_env):
+    """--agent sets that agent's language."""
+    runner, env, tmp_path = runner_env
+    _add_jarvis(runner, env)
+    result = runner.invoke(
+        cli, ["config", "set-language", "pt", "--agent", "jarvis"], env=env)
+    assert result.exit_code == 0, result.output
+    assert _read_config(tmp_path)["agents"]["jarvis"]["language"] == "pt"
+
+
+def test_set_language_agent_clear(runner_env):
+    """'auto' --agent removes the agent's language key."""
+    runner, env, tmp_path = runner_env
+    _add_jarvis(runner, env)
+    runner.invoke(cli, ["config", "set-language", "pt", "--agent", "jarvis"], env=env)
+    runner.invoke(cli, ["config", "set-language", "auto", "--agent", "jarvis"], env=env)
+    assert "language" not in _read_config(tmp_path)["agents"]["jarvis"]
+
+
+def test_set_language_agent_not_found(runner_env):
+    """--agent on a missing agent errors out."""
+    runner, env, _ = runner_env
+    result = runner.invoke(
+        cli, ["config", "set-language", "pt", "--agent", "ghost"], env=env)
+    assert result.exit_code == 1
+    assert "not found" in result.output.lower()
+
+
+def test_set_language_lowercased(runner_env):
+    """Language codes are normalized to lowercase on write."""
+    runner, env, tmp_path = runner_env
+    runner.invoke(cli, ["config", "set-language", "PT"], env=env)
+    assert _read_config(tmp_path)["whisper"]["language"] == "pt"
