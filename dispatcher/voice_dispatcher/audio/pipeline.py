@@ -312,7 +312,6 @@ class AudioPipeline:
         # Subscribe to SpeakRequest events from the core
         from ..core.models import SpeakRequest as SpeakRequestEvent  # type: ignore
         from ..core.models import PermissionRequested  # type: ignore
-        from ..core.models import SpeakCompleted  # type: ignore
         self._dispatcher.bus.subscribe(SpeakRequestEvent, self._on_speak_request)
         # PermissionRequested is only emitted by the core when an agent has
         # enable_permission_relay=True, so subscribing unconditionally is safe.
@@ -646,6 +645,8 @@ class AudioPipeline:
         if voice is None:
             logger.error("TTS skipped — voice not available")
             return
+
+        from ..core.models import SpeakCompleted  # type: ignore
 
         try:
             import wave
