@@ -5,13 +5,13 @@ Usage:
     voice-dispatcher config add-agent <id> --triggers "..." --voice <voice.onnx>
     voice-dispatcher config list
     voice-dispatcher config rotate-token <id>
+    voice-dispatcher config set-language <lang> [--agent <id>]
     voice-dispatcher list-devices
 """
 
 from __future__ import annotations
 import base64
 import json
-import os
 import secrets
 import sys
 from pathlib import Path
@@ -23,21 +23,23 @@ import yaml
 from . import tls as _tls
 
 
-CONFIG_DIR = Path(os.environ.get("VOICE_DISPATCHER_CONFIG_DIR",
-                                  os.path.expanduser("~/.config/voice-dispatcher")))
-CONFIG_FILE = CONFIG_DIR / "config.yaml"
+def _config_file() -> Path:
+    """Path to config.yaml, resolved at call time (mirrors tls.config_dir())."""
+    return _tls.config_dir() / "config.yaml"
 
 
 def _load_config() -> dict:
-    if not CONFIG_FILE.exists():
+    path = _config_file()
+    if not path.exists():
         return {}
-    with open(CONFIG_FILE) as f:
+    with open(path) as f:
         return yaml.safe_load(f) or {}
 
 
 def _save_config(cfg: dict) -> None:
-    CONFIG_DIR.mkdir(parents=True, exist_ok=True)
-    with open(CONFIG_FILE, "w") as f:
+    path = _config_file()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with open(path, "w") as f:
         yaml.dump(cfg, f, default_flow_style=False, allow_unicode=True)
 
 
@@ -132,6 +134,9 @@ def add_agent(agent_id: str, triggers: str, voice: str,
 def list_agents() -> None:
     """List registered agents."""
     cfg = _load_config()
+    global_lang = cfg.get("whisper", {}).get("language")
+    if global_lang:
+        click.echo(f"global whisper language lock: {global_lang}")
     agents = cfg.get("agents", {})
     if not agents:
         click.echo("No agents registered.")
@@ -139,7 +144,9 @@ def list_agents() -> None:
     for hid, hcfg in agents.items():
         triggers = ", ".join(hcfg.get("triggers", []))
         voice = hcfg.get("voice", "(none)")
-        click.echo(f"  {hid}  triggers=[{triggers}]  voice={voice}")
+        lang = hcfg.get("language")
+        suffix = f"  lang={lang}" if lang else ""
+        click.echo(f"  {hid}  triggers=[{triggers}]  voice={voice}{suffix}")
 
 
 @config.command("rotate-token")
@@ -179,6 +186,39 @@ def remove_agent(agent_id: str) -> None:
     del agents[agent_id]
     _save_config(cfg)
     click.echo(f"✓ Agent {agent_id!r} removed.")
+
+
+_CLEAR_SENTINELS = {"auto", "none", "null"}
+
+
+@config.command("set-language")
+@click.argument("language")
+@click.option("--agent", "agent_id", default=None,
+              help="Set this agent's language instead of the global lock.")
+def set_language(language: str, agent_id: Optional[str]) -> None:
+    """Set the Whisper decode language (ISO-639-1, e.g. pt). Use 'auto' to clear."""
+    cfg = _load_config()
+    clearing = language.lower() in _CLEAR_SENTINELS
+    lang = None if clearing else language.lower()
+
+    if agent_id is not None:
+        agents = cfg.get("agents", {})
+        if agent_id not in agents:
+            click.echo(f"Error: agent {agent_id!r} not found.", err=True)
+            sys.exit(1)
+        if clearing:
+            agents[agent_id].pop("language", None)
+        else:
+            agents[agent_id]["language"] = lang
+        target = f"agent {agent_id!r}"
+    else:
+        cfg.setdefault("whisper", {})["language"] = lang
+        target = "global whisper lock"
+
+    _save_config(cfg)
+    shown = "auto-detect" if clearing else lang
+    click.echo(f"✓ Language for {target} set to {shown}.")
+    click.echo("  Restart the dispatcher for it to take effect.")
 
 
 @cli.command("list-devices")
