@@ -27,6 +27,11 @@ whisper:
   model: "tiny"         # tiny | base | small
   device: "cpu"         # cpu | cuda
   compute_type: "int8"  # int8 | float16 | float32
+  # Hard-lock the decode language (ISO-639-1, e.g. "pt"). Auto-detect is
+  # unreliable on short utterances and may mis-detect (e.g. PT decoded as EN).
+  # null = derive from agents: if every agent below shares one `language`, that
+  # language is used for decoding; otherwise auto-detect.
+  language: null
 
 # ── Agents ────────────────────────────────────────────────────────────────────
 #
@@ -45,7 +50,7 @@ agents:
       - "hey jarvis"
       - "jarvis"
       - "ó jarvis"
-    language: en            # hint passed to Whisper; null = auto-detect
+    language: en            # decode language (ISO-639-1); also locks STT when all agents agree
     voice: en_US-lessac-medium.onnx
     websocket_token: "REPLACE_WITH_TOKEN"
     # Relay Claude's tool-permission prompts through the voice channel.

@@ -265,6 +265,17 @@ class AudioPipeline:
         # Agents indexed by token for auth; also by agent_id for routing
         self._agents: dict = config.get("agents", {})
 
+        # STT language lock. Whisper auto-detect is unreliable on short utterances
+        # and often mis-detects (e.g. PT decoded as EN). Precedence:
+        #   1. explicit whisper.language config  → hard lock
+        #   2. all agents that declare a language agree on one → that language
+        #   3. otherwise None → auto-detect (mixed/unspecified setups unchanged)
+        _forced = config.get("whisper", {}).get("language")
+        if not _forced:
+            _langs = {a.get("language") for a in self._agents.values() if a.get("language")}
+            _forced = _langs.pop() if len(_langs) == 1 else None
+        self._whisper_lang: Optional[str] = _forced
+
         # Trigger-matching tolerance (None = auto: 1 edit per trigger word)
         _tol = config.get("audio", {}).get("trigger_tolerance")
         self._trigger_tolerance: Optional[int] = int(_tol) if _tol is not None else None
@@ -548,7 +559,7 @@ class AudioPipeline:
             segments, info = self._whisper_model.transcribe(
                 audio,
                 vad_filter=False,
-                language=None,                             # auto-detect per segment
+                language=self._whisper_lang,               # locked language, or None = auto-detect
                 initial_prompt=self._initial_prompt or None,  # bias toward trigger vocab
             )
             transcript = " ".join(seg.text.strip() for seg in segments).strip()

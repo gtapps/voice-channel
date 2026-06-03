@@ -208,6 +208,45 @@ def test_initial_prompt_built_from_triggers() -> None:
     assert "hey jarvis" in pipeline._initial_prompt
 
 
+def test_whisper_lang_none_when_no_agent_declares() -> None:
+    """No agent declares a language → auto-detect (None)."""
+    _, pipeline = _make_pipeline()
+    assert pipeline._whisper_lang is None
+
+
+def test_whisper_lang_forced_when_agents_agree() -> None:
+    """A single declared language locks Whisper to it."""
+    _, pipeline = _make_pipeline(extra_config={
+        "agents": {"casa": {"triggers": ["hey casa"], "language": "pt",
+                            "voice": "pt.onnx", "websocket_token": "t"}},
+    })
+    assert pipeline._whisper_lang == "pt"
+
+
+def test_whisper_lang_none_when_agents_disagree() -> None:
+    """Agents declaring different languages → auto-detect (None)."""
+    _, pipeline = _make_pipeline(extra_config={
+        "agents": {
+            "jarvis": {"triggers": ["hey jarvis"], "language": "en",
+                       "voice": "en.onnx", "websocket_token": "t1"},
+            "casa": {"triggers": ["hey casa"], "language": "pt",
+                     "voice": "pt.onnx", "websocket_token": "t2"},
+        },
+    })
+    assert pipeline._whisper_lang is None
+
+
+def test_whisper_lang_explicit_override_wins() -> None:
+    """whisper.language hard-locks even when agents declare another language."""
+    _, pipeline = _make_pipeline(extra_config={
+        "whisper": {"model": "tiny", "device": "cpu", "compute_type": "int8",
+                    "language": "pt"},
+        "agents": {"jarvis": {"triggers": ["hey jarvis"], "language": "en",
+                              "voice": "en.onnx", "websocket_token": "t"}},
+    })
+    assert pipeline._whisper_lang == "pt"
+
+
 # ── Permission relay: phonetic spelling ───────────────────────────────────────
 
 def test_phonetic_spell_basic() -> None:
