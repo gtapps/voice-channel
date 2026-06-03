@@ -51,8 +51,13 @@ def _load_config(path: Path) -> dict:
               show_default=True, help="Path to config.yaml")
 @click.option("--no-adapter", is_flag=True,
               help="Skip WebSocket server (audio + core only; for standalone testing)")
-def run_server(config_path: str, no_adapter: bool) -> None:
+@click.option("--log-level", default="INFO",
+              type=click.Choice(["DEBUG", "INFO", "WARNING", "ERROR"], case_sensitive=False),
+              show_default=True,
+              help="Logging verbosity. DEBUG shows raw Whisper transcripts and no-match details.")
+def run_server(config_path: str, no_adapter: bool, log_level: str) -> None:
     """Start voice-dispatcher."""
+    logging.getLogger().setLevel(getattr(logging, log_level.upper()))
     cfg = _load_config(Path(config_path))
     dispatcher = Dispatcher()
 

@@ -110,7 +110,7 @@ def test_punctuation_stripped() -> None:
 
 
 def test_max_edit_distance_exceeded() -> None:
-    # 3+ edits should not match with default max_edit_distance=2
+    # "xyz turn" is far from "hey jarvis"; tol = len(tokens) = 2 for "hey jarvis"
     trigger, command = match_trigger(
         "xyz turn on the lights",
         ["hey jarvis"],
@@ -134,6 +134,78 @@ def test_word_boundary_not_matched() -> None:
     )
     assert trigger is None
     assert command == ""
+
+
+def test_filler_word_skipped() -> None:
+    """Sliding window: a single leading filler ("um") is skipped."""
+    trigger, command = match_trigger(
+        "um hey jarvis turn on the lights",
+        ["hey jarvis"],
+    )
+    assert trigger == "hey jarvis"
+    assert command == "turn on the lights"
+
+
+def test_two_filler_words_skipped() -> None:
+    """Sliding window: up to two leading fillers are skipped."""
+    trigger, command = match_trigger(
+        "well um hey jarvis do that",
+        ["hey jarvis"],
+    )
+    assert trigger == "hey jarvis"
+    assert command == "do that"
+
+
+def test_three_filler_words_not_matched() -> None:
+    """Three leading fillers exceed the 2-offset window — trigger is not found."""
+    trigger, command = match_trigger(
+        "so well um hey jarvis do that",
+        ["hey jarvis"],
+    )
+    assert trigger is None
+
+
+def test_tolerance_two_edits_for_two_word_trigger() -> None:
+    """Two-word trigger allows 2 edits total (one per word)."""
+    # "ey garvis" — two edits from "hey jarvis" (missing 'h', 'j'→'g')
+    trigger, command = match_trigger(
+        "ey garvis turn on the lights",
+        ["hey jarvis"],
+    )
+    assert trigger == "hey jarvis"
+    assert command == "turn on the lights"
+
+
+# ── Pipeline config knobs ─────────────────────────────────────────────────────
+
+def test_trigger_tolerance_config() -> None:
+    """audio.trigger_tolerance is stored and will be passed to match_trigger."""
+    _, pipeline = _make_pipeline(extra_config={"audio": {"trigger_tolerance": 0}})
+    assert pipeline._trigger_tolerance == 0
+
+
+def test_trigger_tolerance_none_when_absent() -> None:
+    """Without audio.trigger_tolerance the auto-scale formula is used (None)."""
+    _, pipeline = _make_pipeline()
+    assert pipeline._trigger_tolerance is None
+
+
+def test_normalize_gain_default_on() -> None:
+    """audio.normalize_gain is True by default."""
+    _, pipeline = _make_pipeline()
+    assert pipeline._normalize_gain is True
+
+
+def test_normalize_gain_config() -> None:
+    """audio.normalize_gain can be disabled via config."""
+    _, pipeline = _make_pipeline(extra_config={"audio": {"normalize_gain": False}})
+    assert pipeline._normalize_gain is False
+
+
+def test_initial_prompt_built_from_triggers() -> None:
+    """_initial_prompt contains the agent's trigger phrase for Whisper biasing."""
+    _, pipeline = _make_pipeline()
+    assert "hey jarvis" in pipeline._initial_prompt
 
 
 # ── Permission relay: phonetic spelling ───────────────────────────────────────

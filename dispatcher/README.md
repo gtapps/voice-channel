@@ -71,7 +71,14 @@ voice-dispatcher run --no-adapter    # audio + core only, no WebSocket (for test
 
 Optional audio tuning in `~/.config/voice-dispatcher/config.yaml`:
 - `audio.input_device` / `audio.output_device` — leave `null` for the system default
-- `whisper.model` — `tiny` (default); `base` improves accuracy at ~2× CPU cost
+- `audio.trigger_tolerance` — integer override for Levenshtein tolerance (default: 1 edit per trigger word; e.g. `2` for "hey jarvis").  Raise if your wake word is often near-missed; lower if you get false triggers.
+- `audio.normalize_gain` — `true` (default) normalises the utterance loudness before transcription, which helps with quiet Bluetooth/HFP captures.  Set `false` to disable.
+- `whisper.model` — `base` (default); `tiny` uses ~½ the CPU but is noticeably less accurate, especially on Bluetooth mics.  `small` further improves accuracy at ~4× CPU cost.
+
+To see raw Whisper transcripts and no-match details in real time:
+```bash
+voice-dispatcher run --log-level debug
+```
 
 ## Run it always-on
 
