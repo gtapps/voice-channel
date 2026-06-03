@@ -10,6 +10,7 @@ This prevents the system from transcribing its own voice back into the channel.
 """
 
 from __future__ import annotations
+import collections
 import io
 import logging
 import math
@@ -36,6 +37,7 @@ SAMPLE_RATE = 16_000          # Hz fed to Whisper / Silero VAD
 CHUNK_SAMPLES = 512           # Silero VAD chunk size (512 @ 16 kHz = 32 ms)
 SILENCE_CHUNKS_END = 25       # ~800 ms of silence ends utterance
 MAX_UTTERANCE_CHUNKS = 1_875  # ~60 s safety limit
+PREROLL_CHUNKS = 10           # ~320 ms of audio buffered before VAD onset
 
 # On Linux the raw ALSA device often only supports 44100/48000 Hz.
 # "sysdefault" (or "default" on many setups) routes through PipeWire/dmix
@@ -74,15 +76,16 @@ def match_trigger(
     Returns (matched_trigger, command_text) or (None, "") if no match.
 
     Tokenizes transcript and trigger on whitespace (after stripping punctuation
-    and lowercasing), then compares the first len(trigger_tokens) transcript
-    tokens against the trigger using Levenshtein distance.  This gives clean
-    word-boundary command extraction — no more mid-word slices like 'y report'
-    for trigger 'agent' vs transcript 'agency report'.
+    and lowercasing), then compares a sliding window of len(trigger_tokens)
+    transcript tokens against the trigger using Levenshtein distance.  The
+    window starts at offset 0 and also tries offsets 1 and 2, so up to two
+    leading filler words ("um hey jarvis") are skipped without appearing in
+    the returned command.
 
-    When max_edit_distance is None (default), a length-scaled tolerance is used:
-    max(1, len(trigger_without_spaces) // 5).  This rejects very-close
-    homophones ('agency' → 'agent', lev=2 > tol=1) while still accepting
-    one-off mishearings ('ey jarvis', lev=1 ≤ tol=1).
+    When max_edit_distance is None (default), a length-scaled tolerance is
+    used: len(trigger_tokens) — one allowed edit per trigger word.  This
+    rejects very-close homophones ('agency' → 'agent', lev=2 > tol=1) while
+    accepting typical mishearings ('ey jarvis', lev=1 ≤ tol=2 for 'hey jarvis').
     Pass an explicit int to override (e.g. max_edit_distance=10 for tests).
     """
     transcript_tokens = _tokenize(transcript)
@@ -91,17 +94,16 @@ def match_trigger(
         if not trigger_tokens:
             continue
         n = len(trigger_tokens)
-        if len(transcript_tokens) < n:
-            continue
-        head = " ".join(transcript_tokens[:n])
         target = " ".join(trigger_tokens)
-        if max_edit_distance is None:
-            tol = max(1, len(target.replace(" ", "")) // 5)
-        else:
-            tol = max_edit_distance
-        if _levenshtein(head, target) <= tol:
-            command = " ".join(transcript_tokens[n:])
-            return trigger, command
+        tol = n if max_edit_distance is None else max_edit_distance
+        # Try a few starting offsets so filler words prepended by Whisper
+        # (e.g. "um hey jarvis") don't prevent a match.
+        max_offset = min(3, len(transcript_tokens) - n + 1)
+        for offset in range(max_offset):
+            head = " ".join(transcript_tokens[offset : offset + n])
+            if _levenshtein(head, target) <= tol:
+                command = " ".join(transcript_tokens[offset + n :])
+                return trigger, command
     return None, ""
 
 
@@ -256,12 +258,29 @@ class AudioPipeline:
         self._trigger_beep: bool = bool(
             config.get("notifications", {}).get("trigger_beep", True)
         )
-        self._whisper_model_size: str = config.get("whisper", {}).get("model", "tiny")
+        self._whisper_model_size: str = config.get("whisper", {}).get("model", "base")
         self._whisper_device: str = config.get("whisper", {}).get("device", "cpu")
         self._whisper_compute: str = config.get("whisper", {}).get("compute_type", "int8")
 
         # Agents indexed by token for auth; also by agent_id for routing
         self._agents: dict = config.get("agents", {})
+
+        # Trigger-matching tolerance (None = auto: 1 edit per trigger word)
+        _tol = config.get("audio", {}).get("trigger_tolerance")
+        self._trigger_tolerance: Optional[int] = int(_tol) if _tol is not None else None
+
+        # Normalise loudness before transcription (helps with quiet Bluetooth/HFP captures)
+        self._normalize_gain: bool = bool(
+            config.get("audio", {}).get("normalize_gain", True)
+        )
+
+        # Bias Whisper toward the configured trigger vocabulary via initial_prompt
+        _all_triggers = [
+            t
+            for _acfg in self._agents.values()
+            for t in _acfg.get("triggers", [])
+        ]
+        self._initial_prompt: str = ", ".join(_all_triggers)
 
         # Half-duplex: set True while TTS is playing
         self._speaking = threading.Event()
@@ -438,12 +457,16 @@ class AudioPipeline:
             speech_buf: list[np.ndarray] = []
             in_speech = False
             silence_count = 0
+            # On VAD onset, prepend this buffer so the wake-word leading edge
+            # isn't clipped before VAD fires.
+            preroll: collections.deque = collections.deque(maxlen=PREROLL_CHUNKS)
 
             with stream:
                 while not self._stop_event.is_set():
                     self._maybe_expire_permission()
-                    # Drain while speaking (half-duplex)
+                    # Drain while speaking (half-duplex); discard stale pre-roll too.
                     if self._speaking.is_set():
+                        preroll.clear()
                         try:
                             audio_q.get(timeout=0.05)
                         except queue.Empty:
@@ -459,6 +482,11 @@ class AudioPipeline:
                     speech_prob = self._vad_score(chunk)
 
                     if speech_prob >= self._vad_threshold:
+                        if not in_speech:
+                            # Onset: seed the buffer with pre-roll so the
+                            # leading edge of the wake word isn't clipped.
+                            speech_buf = list(preroll)
+                            preroll.clear()
                         in_speech = True
                         silence_count = 0
                         speech_buf.append(chunk)
@@ -475,6 +503,9 @@ class AudioPipeline:
                             speech_buf = []
                             in_speech = False
                             silence_count = 0
+                    else:
+                        # Pre-speech silence: keep the rolling pre-roll window.
+                        preroll.append(chunk)
 
         except Exception as exc:
             logger.error("audio worker crashed: %s — voice input disabled", exc)
@@ -504,11 +535,22 @@ class AudioPipeline:
             import numpy as np
             ts_start = time.monotonic()
 
-            # vad_filter=True strips any residual silence Silero missed
+            # Normalise loudness — helps with quiet Bluetooth/HFP captures.
+            if self._normalize_gain:
+                try:
+                    rms = float(np.sqrt(np.mean(audio ** 2)))
+                    if rms > 1e-6:
+                        audio = audio * min(0.1 / rms, 10.0)
+                except (TypeError, ValueError):
+                    pass  # non-ndarray input (e.g. unit-test stubs) — skip
+
+            # Audio is already VAD-gated; vad_filter=False prevents a second
+            # trimming pass that would clip the start of the wake word.
             segments, info = self._whisper_model.transcribe(
                 audio,
-                vad_filter=True,
-                language=None,  # auto-detect per segment
+                vad_filter=False,
+                language=None,                             # auto-detect per segment
+                initial_prompt=self._initial_prompt or None,  # bias toward trigger vocab
             )
             transcript = " ".join(seg.text.strip() for seg in segments).strip()
             lang = info.language if info else "en"
@@ -542,7 +584,9 @@ class AudioPipeline:
         for agent_id, agent_cfg in self._agents.items():
             triggers = agent_cfg.get("triggers", [])
             lang_hint = agent_cfg.get("language") or lang
-            matched_trigger, command = match_trigger(transcript, triggers)
+            matched_trigger, command = match_trigger(
+                transcript, triggers, max_edit_distance=self._trigger_tolerance
+            )
             if matched_trigger:
                 uid = _generate_utterance_id()
                 ts = datetime.now(timezone.utc).isoformat()
