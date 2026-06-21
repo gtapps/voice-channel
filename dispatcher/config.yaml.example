@@ -24,7 +24,7 @@ audio:
 # ── Whisper ────────────────────────────────────────────────────────────────────
 
 whisper:
-  model: "tiny"         # tiny | base | small
+  model: "base"         # tiny | base | small
   device: "cpu"         # cpu | cuda
   compute_type: "int8"  # int8 | float16 | float32
   # Hard-lock the decode language (ISO-639-1, e.g. "pt"). Auto-detect is

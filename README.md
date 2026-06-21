@@ -21,7 +21,7 @@ Two components, one protocol:
 ```
 LAPTOP (Linux / macOS / Windows-via-WSL2 — operator's device, mic + speakers)
   voice-dispatcher (Python)
-    ├── Silero VAD + faster-whisper-tiny  — local STT, no cloud
+    ├── Silero VAD + faster-whisper-base  — local STT, no cloud
     ├── Piper TTS                          — local TTS, no cloud
     └── WebSocket server :7355 (LAN / 0.0.0.0) — wss:// with self-signed cert
 
@@ -392,7 +392,7 @@ The local terminal dialog is always the fallback. See dispatcher/README.md for d
 
 ## Privacy
 
-All STT and TTS are local — no audio is sent to a cloud service. However, Silero VAD + Whisper-tiny
+All STT and TTS are local — no audio is sent to a cloud service. However, Silero VAD + Whisper-base
 transcribes **every detected speech segment** before the trigger-match decides whether to forward.
 Non-matching transcripts are discarded immediately and never leave the dispatcher process.
 This is not the same as wake-word spotting (which would only transcribe on a model hit).

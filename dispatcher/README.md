@@ -1,7 +1,7 @@
 # voice-dispatcher
 
 Host service for voice control — runs on the operator's laptop, owns the mic and speakers.
-Listens for trigger phrases, transcribes via Whisper-tiny, and routes commands to agent
+Listens for trigger phrases, transcribes via Whisper-base, and routes commands to agent
 containers over WebSocket.
 
 ## Requirements
@@ -135,7 +135,7 @@ voice-dispatcher list-devices                   # list audio devices
 ## AirPods / Bluetooth headset note
 
 When a Bluetooth headset activates as a **microphone**, it switches to the HFP/SCO
-codec (mono, 8–16 kHz). This both degrades Whisper-tiny accuracy *and* makes the
+codec (mono, 8–16 kHz). This both degrades Whisper accuracy *and* makes the
 headset's audio **output** unreliable (HFP output on Linux is flaky/silent).
 
 **Recommended on both platforms:** built-in mic for **input**, headset for **output only**.
