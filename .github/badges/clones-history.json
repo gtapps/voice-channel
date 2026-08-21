@@ -502,8 +502,18 @@
       "timestamp": "2026-08-17T00:00:00Z",
       "count": 20,
       "uniques": 12
+    },
+    {
+      "timestamp": "2026-08-18T00:00:00Z",
+      "count": 18,
+      "uniques": 10
+    },
+    {
+      "timestamp": "2026-08-19T00:00:00Z",
+      "count": 20,
+      "uniques": 11
     }
   ],
-  "total": 2555,
-  "total_uniques": 1307
+  "total": 2593,
+  "total_uniques": 1328
 }
