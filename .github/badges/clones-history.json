@@ -597,8 +597,18 @@
       "timestamp": "2026-09-05T00:00:00Z",
       "count": 22,
       "uniques": 16
+    },
+    {
+      "timestamp": "2026-09-06T00:00:00Z",
+      "count": 11,
+      "uniques": 6
+    },
+    {
+      "timestamp": "2026-09-07T00:00:00Z",
+      "count": 15,
+      "uniques": 11
     }
   ],
-  "total": 2852,
-  "total_uniques": 1482
+  "total": 2878,
+  "total_uniques": 1499
 }
