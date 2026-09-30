@@ -687,8 +687,33 @@
       "timestamp": "2026-09-23T00:00:00Z",
       "count": 4,
       "uniques": 4
+    },
+    {
+      "timestamp": "2026-09-24T00:00:00Z",
+      "count": 3,
+      "uniques": 3
+    },
+    {
+      "timestamp": "2026-09-25T00:00:00Z",
+      "count": 2,
+      "uniques": 2
+    },
+    {
+      "timestamp": "2026-09-26T00:00:00Z",
+      "count": 6,
+      "uniques": 5
+    },
+    {
+      "timestamp": "2026-09-27T00:00:00Z",
+      "count": 2,
+      "uniques": 2
+    },
+    {
+      "timestamp": "2026-09-28T00:00:00Z",
+      "count": 46,
+      "uniques": 3
     }
   ],
-  "total": 3043,
-  "total_uniques": 1601
+  "total": 3102,
+  "total_uniques": 1616
 }
